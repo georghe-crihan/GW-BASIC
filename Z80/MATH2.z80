@@ -1,0 +1,30 @@
+
+;;; $FIDIG  ADD TEXT DIGIT TO CURRENT ACCUMULATED NUMBER ;;;
+
+; ***************************************************************
+; 
+;        $FIDIG  CONVERTS DIGIT POINTED TO BY (BX) TO BINARY
+;                VALUE AND ADDS TO NUMBER ACCUMULATED. AT THE
+;                APPROPRIATE TIMES CONVERSION WILL TAKE
+;                PLACE TO THE NEXT HIERARCHY OF NUMBERS,I.E.
+;                INTEGER-SINGLE PRECISION-DOUBLE PRECISION.
+;        CALLING SEQUENCE:       CALL    $FIDIG
+;                WITH (BX) POINTING TO NUMBER IN THE
+;                TEXT BUFFER. NUMBER IS ACCUMULATED IN THE FAC.
+; 
+; ****************************************************************
+; ******************************************************************
+; AS $FIDIG IS ENTERED CF=1 AND (DI) WILL HOLD PLACES TO THE RIGHT OF
+; DECIMAL POINT (IF DECIMAL POINT HAS OCCURRED).(CX) WILL BE EITHER
+; ALL BITS SET OR ALL BITS CLEARED. ALL BITS SET INDICATES A DECIMAL
+; POINT HAS NOT BEEN SEEN YET AND (CX)=0 INDICATES D. P. SEEN
+; ******************************************************************
+$FIDIG:
+	ADC IX, BC		; (DI) INCREMENTED ONLY IF D.P. SEEN
+	PUSH HL		; MUST NOW SAVE ALL NECESSARY REGS.
+	PUSH IX
+	PUSH BC
+	SUB "0"		; SUBTRACT OUT ASCII BIAS
+	PUSH AF		; SAVE ON STACK
+	CALL $GETYP		; SET CONDITION CODES
+	POP AF		; RECALL DIGIT

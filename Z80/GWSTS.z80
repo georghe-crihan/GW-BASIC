@@ -1,0 +1,174 @@
+;  [ This translation created 10-Feb-83 by Version 4.3 ]
+	.radix 8
+;  To be safe
+; CSEG CODESG (public)
+; Assuming segment CS:CSEG
+	include OEM.H
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; GWSTS - GW-BASIC Common Statement Support ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; 
+; 
+; --------- --- ---- -- ---------
+; COPYRIGHT (C) 1982 BY MICROSOFT
+; --------- --- ---- -- ---------
+; 
+;         
+; General Feature Switches (Not OEM Switches)
+; 
+	KANADT=0
+; Japanese date format("[yy]yy/mm/dd")
+	STKEYF=1D
+; Start number of string function keys
+	IBMCSR=IBMLIK
+; IBM comp. cursor interface
+	FKEYCR=74O
+; CR character for F-KEY display line
+	GWLEV2=0
+; Version 2.0 of GW BASIC-86
+; OEM Switches (ONLY INCLUDE IF ABSOLUTELY NECESSARY)
+; 
+	MCI=0
+	TETRA=0
+	MELCO=0
+	ZENITH=0
+; Definition of scroll types
+;  Choice of scroll type is by switch SCROLT.
+;  Switches defined here are used to implement a specific SCROLT type.
+;  If other scroll types are needed then additional SCROLT types should be
+;    defined here.
+	INVLIN=SCROLT
+; Invisible (function key) Line
+	FKFSRL=(SCROLT-1) AND 1
+; Clear fkeys/full scroll/rewrite fkeys
+; Local Switches
+; 
+	KEYFSW=0
+; No KEY Function
+	INTHND=SCP
+; MSDOS Ctl-C interrupt handler
+	CLRFMT=(MELCO-1) AND (ZENITH-1)
+; New COLOR parameter format
+	FKEYCR=27D
+; IBM CR FKey display line graphic
+	.radix 10
+	EXTERN CHRGTR:NEAR
+	EXTERN SYNCHR:NEAR
+	EXTERN SNERR:NEAR
+	EXTERN FCERR:NEAR
+	EXTERN GETBYT:NEAR
+	EXTERN USERR:NEAR
+IF CPM86
+CPMXIO MACRO DFUN
+	LD C, LOW OFFSET DFUN
+	; INT 224D		; CPM86 system call
+ENDM
+ENDIF
+DOSIO MACRO DFUN
+	LD AH, LOW OFFSET DFUN
+	; INT 33D		; MS-DOS system call
+ENDM
+	GDAT=42D
+; MS-DOS Get Date Function
+	SDAT=43D
+; MS-DOS Set Date Function
+	GTIM=44D
+; MS-DOS Get Time Function
+	STIM=45D
+; MS-DOS Set Time Function
+	PUBLIC PATCHG
+PATCHG:
+	DB 500D DUP(?)
+; GW patch space
+
+;;; CLS ;;;
+
+
+;;; LOCATE ;;;
+
+
+;;; WIDTH (of screen) ;;;
+
+
+;;; LCOPY ;;;
+
+	PUBLIC CLS
+	PUBLIC LOCATE
+	PUBLIC GWWID
+	PUBLIC LCOPYS
+	PUBLIC COLOR
+	PUBLIC GETLIN
+	PUBLIC SCRENF
+	PUBLIC SCREEN
+; CSEG DATASG (public)
+; Assuming segment DS:DSEG
+	EXTERN LINCNT:WORD
+	EXTERN LINLEN:WORD
+	EXTERN CSRY:WORD
+	EXTERN CSRX:WORD
+	EXTERN BUF:WORD
+	EXTERN GETFBC:NEAR
+	EXTERN SCRSTT:NEAR
+	EXTERN SCRATR:NEAR
+	EXTERN SETCLR:NEAR
+	EXTERN SWIDTH:NEAR
+	EXTERN LCPY:NEAR
+	COMMA=","
+	OPAREN="("
+	CPAREN=")"
+	QUOTE=34D
+	BKSPC=8D
+	CR=13D
+	LF=10D
+; CLS: CLear Screen issues an escape sequence to clear
+;      the CRT.  Sequences are ANSII standard whereas the machine
+;      default is not.  CLS resets the graphics cursor position.
+; ENTRY - none
+; EXIT  - none
+; USES  - none
+; 
+	EXTERN CLRSCN:NEAR
+CLS:
+	CALL SCNINT		; Test for optional parameter
+	CCF
+	PUSH AF
+	PUSH AF
+	CALL EOSCHK		; Test for end of statement
+	POP AF
+	POP AF
+	PUSH HL
+	CALL CLRSCN
+	POP HL
+	RET
+; LOCATE: Parse the following syntax:
+;        LOCATE [Y] [, [X] [, [CURSOR] [, [START] [, [STOP] ]]]
+; 
+	EXTERN SCNPOS:NEAR
+LOCATE:
+	CALL SCNINT		; Get optional Y parameter
+	JP NC, YLCPRM		; Parameter present
+	CALL GTLINE		; Get the current screen position
+YLCPRM:
+	LD E, A
+	OR A		; Test for LOCATE 0
+	JP Z, GOFCER
+	PUSH HL
+	EX AF, AF'
+	LD A, E
+	LD HL, KEYSW
+	SUB (HL)
+	EX AF, AF'
+	POP HL		; Increment if PF-keys are displayed
+Exception: Don't know how to generate CMP: {'type': 'instruction', 'op': 'CMP', 'operands': ('DL', ('BYTE', 'PTR', 'LINCNT')), 'comment': 'Check for parameter range', 'id': 140}
+Traceback (most recent call last):
+  File "/Users/mac/Library/Python/3.9/lib/python/site-packages/z80conv-0.0.1-py3.9.egg/z80conv/conv.py", line 20, in main
+    for line in writer.lines():
+  File "/Users/mac/Library/Python/3.9/lib/python/site-packages/z80conv-0.0.1-py3.9.egg/z80conv/writer.py", line 27, in lines
+    line = getattr(self, generator)(token)
+  File "/Users/mac/Library/Python/3.9/lib/python/site-packages/z80conv-0.0.1-py3.9.egg/z80conv/writer.py", line 801, in _gen_instruction
+    instr = getattr(self, '_gen_instruction_' + op.lower())(token)
+  File "/Users/mac/Library/Python/3.9/lib/python/site-packages/z80conv-0.0.1-py3.9.egg/z80conv/writer.py", line 264, in _gen_instruction_cmp
+    raise SyntaxError("Don't know how to generate CMP: %s" % token)
+SyntaxError: Don't know how to generate CMP: {'type': 'instruction', 'op': 'CMP', 'operands': ('DL', ('BYTE', 'PTR', 'LINCNT')), 'comment': 'Check for parameter range', 'id': 140}

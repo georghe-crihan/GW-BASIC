@@ -1,0 +1,113 @@
+;  [ This translation created 10-Feb-83 by Version 4.3 ]
+	.radix 8
+;  To be safe
+; CSEG CODESG (public)
+; Assuming segment CS:CSEG
+	include OEM.H
+
+;;; GLOBAL TEMPS and DEFS ;;;
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; GIODSK - BASIC-86 Generalized I/O Disk Driver ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; 
+; 
+; --------- --- ---- -- ---------
+; COPYRIGHT (C) 1982 BY MICROSOFT
+; --------- --- ---- -- ---------
+; 
+;         T. Corbett      Microsoft   for BASIC-86 Generalized I/O
+;                         Based on code written for BASCOM-86
+;         
+	include GIO86U
+	CPM86=0
+	include MSDOSU
+	.radix 10
+	EXTERN CHRGTR:NEAR
+	EXTERN SYNCHR:NEAR
+	EXTERN OUTDO:NEAR
+	EXTERN DERNMF:NEAR
+	EXTERN DERBFM:NEAR
+	EXTERN DERBRN:NEAR
+	EXTERN DERFAO:NEAR
+	EXTERN FCERR:NEAR
+	EXTERN DERTMF:NEAR
+	EXTERN DERFAE:NEAR
+	EXTERN DERFNF:NEAR
+	EXTERN DERIOE:NEAR
+	EXTERN DERDFL:NEAR
+	EXTERN DERFOV:NEAR
+	EXTERN CONIA:NEAR
+	EXTERN MAKINT:NEAR
+	EXTERN MOVE1:NEAR
+	EXTERN $NORMD:NEAR
+	EXTERN DEVBOT:NEAR
+; CSEG DATASG (public)
+; Assuming segment DS:DSEG
+	EXTERN DFACLO:WORD
+	EXTERN FAC:WORD
+	EXTERN VALTYP:WORD
+	EXTERN RECRD:WORD
+	EXTERN LBUFF:WORD
+	EXTERN PBUFF:WORD
+	EXTERN FILNAM:WORD
+	EXTERN FILNA2:WORD
+	ASCCR=13D
+; Ascii carriage return
+	ASCCTZ=26D
+; END OF FILE CHARACTER
+; Disk Dispatch Table
+; 
+	PUBLIC DSKDSP
+DSKDSP:
+	dw (DSKEOF)
+; test EOF for file opened to this device
+	dw (DSKLOC)
+; LOC - sequential records / last random record
+	dw (DSKLOF)
+; LOF - file size
+	dw (DSKCLS)
+; perform special CLOSE functions for this device
+	dw (FCERR)
+; set device width
+	dw (DSKRND)
+; GET/PUT random record from/to this device
+	dw (DSKOPN)
+; perform special OPEN functions for this device
+	dw (DSKSIN)
+; input 1 byte from file opened on this device
+	dw (DSKSOT)
+; output 1 byte to file opened on this device
+	dw (DSKGPS)
+; POS
+	dw (DSKGWD)
+; get device width
+	dw (DSKSCW)
+; set device comma width
+	dw (DSKGCW)
+; get device comma width
+	dw (DFSTLD)
+; block input from file opened on this device
+	dw (DEVBOT)
+; block output to file opened on this device
+
+;;; Misc. Disk Routines ;;;
+
+; DSKEOF - test for End-Of-File on device.
+;  Entry - SI points to File-Data-Block.
+;  Exit  - [BX] = -1 if EOF, 0 if not EOF
+; 
+DSKEOF:
+Exception: Don't know how to generate CMP {'type': 'instruction', 'op': 'CMP', 'operands': (('BYTE', 'PTR', 'F_MODE[SI]'), ('LOW', 'OFFSET', 'MD_SQO')), 'comment': 'EOF( ) is Illegal', 'id': 87}
+Traceback (most recent call last):
+  File "/Users/mac/Library/Python/3.9/lib/python/site-packages/z80conv-0.0.1-py3.9.egg/z80conv/conv.py", line 20, in main
+    for line in writer.lines():
+  File "/Users/mac/Library/Python/3.9/lib/python/site-packages/z80conv-0.0.1-py3.9.egg/z80conv/writer.py", line 27, in lines
+    line = getattr(self, generator)(token)
+  File "/Users/mac/Library/Python/3.9/lib/python/site-packages/z80conv-0.0.1-py3.9.egg/z80conv/writer.py", line 801, in _gen_instruction
+    instr = getattr(self, '_gen_instruction_' + op.lower())(token)
+  File "/Users/mac/Library/Python/3.9/lib/python/site-packages/z80conv-0.0.1-py3.9.egg/z80conv/writer.py", line 189, in _gen_instruction_cmp
+    raise SyntaxError("Don't know how to generate CMP %s" % str(token))
+SyntaxError: Don't know how to generate CMP {'type': 'instruction', 'op': 'CMP', 'operands': (('BYTE', 'PTR', 'F_MODE[SI]'), ('LOW', 'OFFSET', 'MD_SQO')), 'comment': 'EOF( ) is Illegal', 'id': 87}

@@ -1,0 +1,131 @@
+;  [ This translation created 10-Feb-83 by Version 4.3 ]
+	.radix 8
+;  To be safe
+; CSEG CODESG (public)
+; Assuming segment CS:CSEG
+	include OEM.H
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; GIOSCN - Screen Machine Independent Device Driver Code ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; 
+; 
+; --------- --- ---- -- ---------
+; COPYRIGHT (C) 1982 BY MICROSOFT
+; --------- --- ---- -- ---------
+; 
+; 	
+	include GIO86U
+	CPM86=0
+; CPM86 Operating System
+	IBMCSR=IBMLIK
+; IBM compatibile cursor control interface
+; Definition of scroll types
+;  Choice of scroll type is by switch SCROLT.
+;  Switches defined here are used to implement a specific SCROLT type.
+;  If other scroll types are needed then additional SCROLT types should be
+;    defined here.
+	INVLIN=SCROLT
+; Invisible (function key) Line
+	FKFSRL=(SCROLT-1) AND 1
+; Clear fkeys/full scroll/rewrite fkeys
+	include MSDOSU
+; Operating System Constants
+	PUBLIC SCNDSP
+	PUBLIC SCNINI
+	PUBLIC SCNTRM
+	EXTERN DERBFM:NEAR
+	EXTERN INIFDB:NEAR
+	EXTERN DEVBIN:NEAR
+	EXTERN DEVBOT:NEAR
+; CSEG DATASG (public)
+; Assuming segment DS:DSEG
+	EXTERN TWOBYT:WORD
+; Screen Dispatch Table
+; 
+SCNDSP:
+	dw (DERBFM)
+; test EOF for file opened to this device
+	dw (DERBFM)
+; LOC
+	dw (DERBFM)
+; LOF
+	dw (SCNCLS)
+; perform special CLOSE functions for this device
+	dw (SCNSWD)
+; set device width
+	dw (DERBFM)
+; GET/PUT random record from/to this device
+	dw (SCNOPN)
+; perform special OPEN functions for this device
+	dw (DERBFM)
+; input 1 byte from file opened on this device
+	dw (SCNSOT)
+; output 1 byte to file opened on this device
+	dw (SCNGPS)
+; POS
+	dw (SCNGWD)
+; get device width
+	dw (SCNSCW)
+; set device comma width
+	dw (SCNGCW)
+; get device comma width
+	dw (DEVBIN)
+; block input from file opened on this device
+	dw (DEVBOT)
+; block output to file opened on this device
+	PUBLIC SCNSWD
+	PUBLIC SCNSOT
+	PUBLIC SCNGPS
+	PUBLIC SCNGWD
+	PUBLIC SCNSCW
+	PUBLIC SCNGCW
+
+;;; CRT Primitive I/O Routines ;;;
+
+; SCNINI is called to initialize Screen when BASIC comes up
+; 
+; CSEG DATASG (public)
+	EXTERN WDTFLG:WORD
+SCNINI:
+	LD A, (LINLEN)		;  Get CRT logical line length
+	LD (WDTFLG), A		;  Default width of device SCRN:
+	RET
+; SCNTRM is called to Clean-up Screen when BASIC terminates
+; 
+	EXTERN TKEYOF:NEAR
+SCNTRM:
+	CALL TKEYOF		; Turn off KEY display
+	EXTERN SCNPOS:NEAR
+	CALL SCNPOS		; [DX]=current cursor location
+	RET
+; SCNCLS - perform any device dependent close functions.
+;  Entry - SI points to File-Data-Block.
+;  Exit  - All registers preserved.
+;          This routine is called before BASIC releases the
+;          file-data-block associated with this file.
+; 
+SCNCLS:
+	RET
+; SCNSWD - set device width
+;  Entry - [DX] = new device width
+;  Exit  - All registers preserved
+; 
+SCNSWD:
+	EXTERN SWIDTH:NEAR
+; CSEG DATASG (public)
+	EXTERN LINCNT:WORD
+	EXTERN WDTFLG:WORD
+	LD (WDTFLG), E		; Set/Reset infinite length flag
+Exception: Don't know how to generate CMP: {'type': 'instruction', 'op': 'CMP', 'operands': ('DL', ('LOW', 255)), 'comment': None, 'id': 109}
+Traceback (most recent call last):
+  File "/Users/mac/Library/Python/3.9/lib/python/site-packages/z80conv-0.0.1-py3.9.egg/z80conv/conv.py", line 20, in main
+    for line in writer.lines():
+  File "/Users/mac/Library/Python/3.9/lib/python/site-packages/z80conv-0.0.1-py3.9.egg/z80conv/writer.py", line 27, in lines
+    line = getattr(self, generator)(token)
+  File "/Users/mac/Library/Python/3.9/lib/python/site-packages/z80conv-0.0.1-py3.9.egg/z80conv/writer.py", line 801, in _gen_instruction
+    instr = getattr(self, '_gen_instruction_' + op.lower())(token)
+  File "/Users/mac/Library/Python/3.9/lib/python/site-packages/z80conv-0.0.1-py3.9.egg/z80conv/writer.py", line 264, in _gen_instruction_cmp
+    raise SyntaxError("Don't know how to generate CMP: %s" % token)
+SyntaxError: Don't know how to generate CMP: {'type': 'instruction', 'op': 'CMP', 'operands': ('DL', ('LOW', 255)), 'comment': None, 'id': 109}

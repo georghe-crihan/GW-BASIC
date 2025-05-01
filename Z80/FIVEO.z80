@@ -1,0 +1,967 @@
+;  [ This translation created 10-Feb-83 by Version 4.3 ]
+	.radix 8
+;  To be safe
+; CSEG CODESG (public)
+; Assuming segment CS:CSEG
+	include OEM.H
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; FIVEO 5.0 Features -WHILE/WEND ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+;;;;;;;;;;
+;; CALL ;;
+;;;;;;;;;;
+
+
+;;;;;;;;;;;
+;; CHAIN ;;
+;;;;;;;;;;;
+
+
+;;;;;;;;;;;;;;;;;;;;;
+;; WRITE /P. Allen ;;
+;;;;;;;;;;;;;;;;;;;;;
+
+	.radix 10
+	TSHIBA=0
+	PC8A=0
+	LABEL=PC8A
+	OKI=0
+	include GIO86U
+	include MSDOSU
+IF CPM86
+	include CPM86U
+ENDIF
+	EXTERN RESTORE:NEAR
+; CSEG DATASG (public)
+; Assuming segment DS:DSEG
+	EXTERN SUBFLG:WORD
+	EXTERN TEMP:WORD
+;  Code Segment ( terminated by END at bottom of file )
+	EXTERN CHRGTR:NEAR
+	EXTERN SYNCHR:NEAR
+	EXTERN DCOMPR:NEAR
+	EXTERN GETYPR:NEAR
+	EXTERN SNERR:NEAR
+	EXTERN GETSTK:NEAR
+	EXTERN PTRGET:NEAR
+	EXTERN CRDO:NEAR
+	EXTERN VMOVFM:NEAR
+	EXTERN FRQINT:NEAR
+
+;;; WHILE ;;;
+
+
+;;; WEND ;;;
+
+	PUBLIC WHILE
+	PUBLIC WEND
+	EXTERN ERROR:NEAR
+	EXTERN FRMCHK:NEAR
+	EXTERN $FOR:NEAR
+	EXTERN $WHILE:NEAR
+	EXTERN WNDSCN:NEAR
+	EXTERN FRMEVL:NEAR
+	EXTERN NEWSTT:NEAR
+	EXTERN FORSZC:NEAR
+	EXTERN ERRWE:NEAR
+; CSEG DATASG (public)
+	EXTERN SAVSTK:WORD
+	EXTERN NXTLIN:WORD
+	EXTERN CURLIN:WORD
+	EXTERN ENDFOR:WORD
+; 
+;  THIS CODE HANDLES THE STATEMENTS WHILE/WEND
+;  THE 8080 STACK IS USED TO PUT AN ENTRY ON FOR EACH ACTIVE WHILE
+;  THE SAME WAY ACTIVE GOSUB AND FOR ENTRIES ARE MADE.
+;  THE FORMAT IS AS FOLLOWS:
+;        $WHILE - THE TOKEN IDENTIFYING THE ENTRY (1 BYTE)
+;        A TEXT POINTER AT THE CHARACTER AFTER THE WEND OF THE WHILE BODY (2 BYTES)
+;        A TEXT POINTER AT THE CHARACTER AFTER THE WHILE OF THE WHILE BODY (2 BYTES)
+;        THE LINE NUMBER OF THE LINE THAT THE WHILE IS ON (2 BYTES)
+; 
+;        TOTAL   7 BYTES
+; 
+WHILE:
+; KEEP THE WHILE TEXT POINTER HERE
+	LD (ENDFOR), HL		; SAVE TEXT ADDRESS
+	CALL WNDSCN		; SCAN FOR THE MATCHING WEND
+; CAUSE AN ERRWH IF NO WEND TO MATCH
+	CALL CHRGTR		; POINT AT CHARACTWER AFTER WEND
+	EX DE, HL		; POSITION OF MATCHING WEND
+	CALL FNDWND		; SEE IF THERE IS A STACK ENTRY FOR THIS WHILE
+	INC SP
+; GET RID OF THE NEWSTT ADDRESS ON THE STACK
+	INC SP
+	JR NZ, WNOTOL		; IF NO MATCH NO NEED TO TRUNCATE THE STACK
+	ADD HL, BC		; ELIMINATE EVERYTHING UP TO AND INCLUDING
+; THE MATCHING WHILE ENTRY
+	LD SP, HL
+	LD (SAVSTK), HL
+WNOTOL:
+	LD HL, (CURLIN)		; MAKE THE STACK ENTRY
+	PUSH HL
+	LD HL, (ENDFOR)		; GET TEXT POINTER FOR WHILE BACK
+	PUSH HL
+	PUSH DE		; SAVE THE WEND TEXT POINTER
+	JR FNWEND		; FINISH USING WEND CODE
+WEND:
+	JP NZ, SNERR
+; STATEMENT HAS NO ARGUMENTS
+	EX DE, HL		; FIND MATCHING WHILE ENTRY ON STACK
+	CALL FNDWND
+	JR NZ, WEERR		; MUST MATCH OR ELSE ERROR
+	LD SP, HL		; TRUNCATE STACK AT MATCH POINT
+	LD (SAVSTK), HL		; [H,L] POINTING INTO STACK ENTRY
+	LD DE, (CURLIN)		; REMEMBER WEND LINE #
+	LD (NXTLIN), DE		; IN NXTLIN
+	INC HL		; INDEX INTO STACK ENTRY TO GET VALUES
+	INC HL		; SKIP OVER TEXT POINTER OF WEND
+	LD DE, (HL)		; SET [D,E]=TEXT POINTER OF WHILE
+	INC HL
+	INC HL
+	LD HL, (HL)		; [H,L]=LINE NUMBER OF WHILE
+	LD (CURLIN), HL		; IN CASE OF ERROR OR CONTINUATION FIX CURLIN
+	EX DE, HL		; GET TEXT POINTER OF WHILE FORMULA INTO [H,L]
+FNWEND:
+	CALL FRMEVL		; EVALUATE FORMULA
+	EXTERN VSIGN:NEAR
+	PUSH HL		; SAVE TEXT POINTER
+	CALL VSIGN		; GET IF TRUE OR FALSE
+	POP HL		; GET BACK WHILE TEXT POINTER
+	JR Z, FLSWHL		; GO BACK AT WEND IF FALSE
+	LD BC, OFFSET $WHILE		; COMPLETE WHILE ENTRY
+	LD B, C		; NEED IT IN THE HIGH BYTE
+	PUSH BC
+	JP NEWSTT
+FLSWHL:
+	LD HL, (NXTLIN)		; SETUP CURLIN FOR WEND
+	LD (CURLIN), HL
+	POP HL		; TAKE OFF TEXT OF WEND AS NEW TEXT POINTER
+	POP BC		; GET RID OF TEXT POINTER OF WHILE
+	POP BC		; TAKE OFF LINE NUMBER OF WHILE
+	JP NEWSTT
+; 
+;  THIS SUBROUTINE SEARCHES THE STACK FOR AN WHILE ENTRY
+;  WHOSE WEND TEXT POINTER MATCHES [D,E]. IT RETURNS WITH ZERO TRUE
+;  IF A MATCH IS FOUND AND ZERO FALSE OTHERWISE. FOR ENTRIES
+;  ARE SKIPPED OVER, BUT GOSUB ENTRIES ARE NOT.
+; 
+	WHLSIZ=7
+; 
+;  Note - 8086 versions force stack entries to be an even length
+;  so stack accesses won't cross word boundaries.  This is done
+;  for speed.  To accomplish this, an extra byte is pushed on
+;  top of the WHILE token.  This extra byte is NOT reflected in
+;  the value of WHLSIZ but is taken care of by the code.
+; 
+FNDWND:
+	LD HL, 4		; SKIP OVER RETURN ADDRESS AND NEWSTT
+	ADD HL, SP
+FNDWN2:
+	INC HL
+	LD A, (HL)		; GET THE ENTRY TYPE
+	INC HL
+	LD BC, OFFSET $FOR
+	CP C		; SEE IF ITS $FOR
+	JR NZ, FNDWN3
+	LD BC, OFFSET FORSZC -1		; Yes, so skip over it.  Note that
+	ADD HL, BC		; the pointer has already been
+	JR FNDWN2		; incremented once.
+FNDWN3:
+	LD BC, OFFSET $WHILE
+	CP C
+	RET NZ
+	PUSH HL
+	LD HL, (HL)
+	OR A
+	SBC HL, DE
+	ADD HL, DE
+	POP HL		; CMP [BX],DX-SAME WEND?
+	LD BC, OFFSET WHLSIZ -1		; Note that the pointer has
+; already been incremented once.
+	RET Z
+; RETURN IF ENTRY MATCHES
+	ADD HL, BC
+	JR FNDWN2
+WEERR:
+	LD DE, OFFSET ERRWE
+	JP ERROR
+
+;;; CHAIN ;;;
+
+; CSEG DATASG (public)
+	EXTERN TXTTAB:WORD
+	EXTERN VALTYP:WORD
+	EXTERN $COMMON:NEAR
+	EXTERN $MERGE:NEAR
+	EXTERN FRMEVL:NEAR
+	EXTERN OMERR:NEAR
+	EXTERN SCRTCH:NEAR
+	EXTERN LINGET:NEAR
+	EXTERN $DELETE:NEAR
+	PUBLIC CHAIN
+	PUBLIC COMMON
+	EXTERN PTRGTN:NEAR
+	EXTERN PTRGTR:NEAR
+	EXTERN MOVE1:NEAR
+	EXTERN NEWSTT:NEAR
+	EXTERN PTRGET:NEAR
+	EXTERN STRCPY:NEAR
+	EXTERN GARBA2:NEAR
+; CSEG DATASG (public)
+	EXTERN FRETOP:WORD
+; 
+; 
+; CSEG DATASG (public)
+	EXTERN SAVFRE:WORD
+	EXTERN IADAHL:NEAR
+; CSEG DATASG (public)
+	EXTERN TEMP3:WORD
+	EXTERN TEMP9:WORD
+	EXTERN VARTAB:WORD
+	EXTERN ARYTAB:WORD
+	EXTERN CHNFLG:WORD
+	EXTERN STREND:WORD
+	EXTERN CURLIN:WORD
+	EXTERN SAVSTK:WORD
+	EXTERN ENDBUF:WORD
+	EXTERN MRGFLG:WORD
+	EXTERN MDLFLG:WORD
+	EXTERN CHNLIN:WORD
+	EXTERN CMEPTR:WORD
+	EXTERN CMSPTR:WORD
+	EXTERN BLTUC:NEAR
+	EXTERN DATA:NEAR
+	EXTERN FNDLIN:NEAR
+	EXTERN USERR:NEAR
+	EXTERN ERSFIN:NEAR
+	EXTERN FCERR:NEAR
+	EXTERN NOARYS:NEAR
+	EXTERN DEL:NEAR
+	EXTERN LINKER:NEAR
+	EXTERN SCNLIN:NEAR
+	EXTERN FRQINT:NEAR
+;  This is the code for the CHAIN statement
+;  The syntax is:
+;  CHAIN [MERGE]<file name>[,[<line number>][,ALL][,DELETE <range>]]
+;  The steps required to execute a CHAIN are:
+; 
+;  1.) Scan arguments
+; 
+;  2.) Scan program for all COMMON statements and
+;        mark specified variables.
+; 
+;  3.) Squeeze unmarked entries from symbol table.
+; 
+;  4.) Copy string literals to string space
+; 
+;  5.) Move all simple variables and arrays into the
+;        bottom of string space.
+; 
+;  6.) Load new program
+; 
+;  7.) Move variables back down positioned after program.
+; 
+;  8.) Run program
+CHAIN:
+	XOR A		; Assume no MERGE
+	LD (MRGFLG), A
+	LD (MDLFLG), A		; Also no MERGE w/ DELETE option
+; CSEG DATASG (public)
+	EXTERN OPTFLG:WORD
+	EXTERN TOPTFG:WORD
+	EXTERN OPTVAL:WORD
+	EXTERN TOPTVL:WORD
+	LD A, (OPTFLG)
+	LD (TOPTFG), A		; SAVE OPTION BASE VALUE
+	LD A, (OPTVAL)		; SAVE OPTION VALUE FOR ARRAY BASE
+	LD (TOPTVL), A
+	LD A, (HL)		; Get current char
+	LD DE, OFFSET $MERGE		; Is it MERGE?
+	CP E		; Test
+	JR NZ, NTCHNM		; NO
+	LD (MRGFLG), A		; Set MERGE flag
+	INC HL
+NTCHNM:
+	DEC HL		; Rescan file name
+	CALL CHRGTR
+	EXTERN PRGFLI:NEAR
+	CALL PRGFLI		; Evaluate file name and OPEN it
+	PUSH HL		; Save text pointer
+	LD HL, 0		; Get zero
+	LD (CHNLIN), HL		; Assume no CHAIN line #
+	POP HL		; Restore text pointer
+	DEC HL		; Back up pointer
+	CALL CHRGTR		; Scan char
+	JP Z, NTCHAL
+; No line number etc.
+	CALL SYNCHR
+	DB 44D
+; Must be comma
+	CP 44		; Ommit line # (Use ALL for instance)
+	JR Z, NTLINF		; YES
+	CALL FRMEVL		; Evaluate line # formula
+	PUSH HL		; Save text poiner
+	CALL FRQINT		; Force to int in [H,L]
+	LD (CHNLIN), HL		; Save it for later
+	POP HL		; Restore text poiner
+	DEC HL		; Rescan last char
+	CALL CHRGTR
+	JR Z, NTCHAL		; No ALL i.e. preserve all vars across CHAIN
+NTLINF:
+	CALL SYNCHR
+	DB 44D
+; Should be comma here
+	LD DE, OFFSET $DELETE		; Test for DELETE option
+	CP E		; Is it?
+	JR Z, CHMWDL		; Yes
+	CALL SYNCHR
+	DB "A"
+; Check for "ALL"
+	CALL SYNCHR
+	DB "L"
+	CALL SYNCHR
+	DB "L"
+	JP Z, DNCMDA
+; Goto step 3
+	CALL SYNCHR
+	DB 44D
+; Force comma to appear
+	CP E		; Must be DELETE
+	JP NZ, SNERR
+; No, give error
+	OR A		; Flag to goto DNCMDA
+CHMWDL:
+	PUSH AF		; Save ALL flag
+	LD (MDLFLG), A		; Set MERGE w/ DELETE
+	CALL CHRGTR		; Get char after comma
+	CALL SCNLIN		; Scan line range
+	EXTERN DEPTR:NEAR
+	PUSH BC
+	CALL DEPTR		; Change pointers back to numbers
+	POP BC
+	POP DE		; Pop max line off stack
+	PUSH BC		; Save pointer to start of 1st line
+	PUSH HL
+	POP BC
+			; Save pointer to start line
+	LD (CMSPTR), HL
+	CALL FNDLIN		; Find the last line
+	JR NC, FCERRG		; Must have exact match on end of range
+	LD D, H		; [D,E] =  pointer at the start of the line
+	LD E, L		; beyond the last line in the range
+	LD (CMEPTR), HL		; Save pointer to end line
+	POP HL		; Get back pointer to start of range
+	LD A, H
+	SUB D
+	RET NZ
+	LD A, L
+	SUB E		; Make sure the start comes before the end
+FCERRG:
+	JP NC, FCERR
+; If not, "Illegal function call"
+	POP AF		; Flag that says whether to go to DNCMDA
+	JP NZ, DNCMDA
+; "ALL" option was present
+NTCHAL:
+	LD HL, (CURLIN)		; Save current line number on stack
+	PUSH HL
+	LD HL, (TXTTAB)		; Start searching for COMMONs at program start
+	DEC HL		; Compensate for next instr
+CLPSC1:
+	INC HL		; Look at first char of next line
+CLPSCN:
+	LD A, (HL)		; Get char from program
+	INC HL
+	OR (HL)		; Are we pointing to program end?
+	JP Z, CLPFIN
+; Yes
+	INC HL
+	LD DE, (HL)		; Get line # in [D,E]
+	INC HL
+	LD (CURLIN), DE		; Save current line # in CURLIN for errors
+CSTSCN:
+	CALL CHRGTR		; Get statment type
+AFTCOM:
+	OR A
+	JR Z, CLPSC1		; EOL Scan next one
+	CP ":"		; Are we looking at colon
+	JR Z, CSTSCN		; Yes, get next statement
+	CP 254		; COMMONs prceeded by 254
+	JR NZ, NOCOMM		; not one
+	INC HL		; move ahead
+	LD A, (HL)
+	LD DE, OFFSET $COMMON		; Test for COMMON, avoid byte externals
+	CP E		; Is it a COMMON?
+	JR Z, DOCOMM		; Yes, handle it
+	DEC HL		; Back up the pointer.
+NOCOMM:
+	CALL CHRGTR		; Get first char of statement
+	CALL DATA		; Skip over statement
+	DEC HL		; Back up to rescan terminator
+	JR CSTSCN		; Scan next one
+DOCOMM:
+	CALL CHRGTR		; Get thing after COMMON
+	JR Z, AFTCOM		; Get next thing
+NXTCOM:
+	PUSH HL		; Save text pointer
+	LD A, LOW 1		; Call PTRGET to search for array
+	LD (SUBFLG), A
+	CALL PTRGTN		; This subroutine in F3 scans variables
+	JR Z, FNDAAY		; Found array
+	LD A, B		; Try finding array with COMMON bit set
+	OR 128D
+	LD B, A
+	XOR A		; Set zero CC
+	CALL ERSFIN		; Search array table
+	LD A, LOW 0		; Clear SUBFLG in all cases
+	LD (SUBFLG), A
+	JR NZ, NTFN2T		; Not found, try simple
+	LD A, (HL)		; Get terminator, should be "("
+	CP "("		; Test
+	JR NZ, SCNSMP		; Must be simple then
+	POP AF		; Get rid of saved text pointer
+	JR COMADY		; Already was COMMON, ignore it
+NTFN2T:
+	LD A, (HL)		; Get terminator
+	CP "("		; Array specifier?
+	POP DE		; (DE:=saved text pointer.)
+	JR Z, SKPCOM		; Yes, undefined array - just skip it.
+	PUSH DE		; No, resave pointer to start of variable
+SCNSMP:
+	POP HL		; Rescan variable name for start
+	CALL PTRGTN		; Evaluate as simple
+	OR A		; If var not found, [D,E]=0
+	JR NZ, COMFNS		; Found it
+	LD A, B		; Try to find in COMMON
+	OR 128D		; Set COMMON bit
+	LD B, A
+	LD DE, OFFSET COMPT2		; push on return address
+	PUSH DE
+	LD DE, OFFSET PTRGTR		; address to common return point
+	PUSH DE
+	LD A, (VALTYP)		; Must have VALTYP in [D]
+	LD D, A
+	JP NOARYS		; Search symbol table
+COMPT2:
+	OR A		; Found?
+	JR Z, SKPCOM		; No, just skip over this variable.
+COMFNS:
+	PUSH HL		; Save text pointer
+	LD B, D		; Get pointer to var in [B,C]
+	LD C, E
+	LD HL, OFFSET BCKUCM		; Loop back here
+	PUSH HL
+CBAKBL:
+	DEC BC		; Point at first char of rest
+LPBKNC:
+	LD IYH, B
+	LD IYL, C
+	LD A, (IY)		; Back up until plus byte
+	DEC BC
+	OR A
+	JP M, LPBKNC
+; Now point to 2nd char of var name
+	LD IYH, B
+	LD IYL, C
+	LD A, (IY)		; set COMMON bit
+	OR 128D
+	LD IXH, B
+	LD IXL, C
+	LD (IX), A
+	RET		; done
+FNDAAY:
+	LD (SUBFLG), A		; Array found, clear SUBFLG
+	LD A, (HL)		; Make sure really array spec
+	CP "("		; Really an array?
+	JR NZ, SCNSMP		; No, scan as simp
+	EX (SP), HL		; XTHL
+; Save text pointer, get rid of saved text pointer
+BAKCOM:
+	DEC BC		; Point at last char of name extension
+	DEC BC
+	CALL CBAKBL		; Back up before variable and mark as COMMON
+BCKUCM:
+	POP HL		; Restore text pointer
+SKPCOM:
+	DEC HL		; Rescan terminator
+	CALL CHRGTR
+	JP Z, AFTCOM
+; End of COMMON statement
+	CP "("		; End of COMMON array spec?
+	JR NZ, CHKCST		; No, should be comma
+COMADY:
+	PUSH HL
+	CALL CHRGTR		; Fetch char after paren
+	CP ")"
+	JR Z, COMRPN		; Only right paren follows
+	POP HL
+	EXTERN EVAL:NEAR
+	CALL EVAL		; Possible number of dimensions(compiler compatible)
+	CALL GETYPR
+	JP Z, FCERR
+; Dimensions argument cannot be string
+	JR COMRP1
+COMRPN:
+	POP DE
+COMRP1:
+	CALL SYNCHR
+	DB ")"
+; Right paren should follow
+	JP Z, AFTCOM
+; End of COMMON
+CHKCST:
+	CALL SYNCHR
+	DB 44D
+; Force comma to appear here
+	JP NXTCOM		; Get next COMMON variable
+;  Step 3 - Squeeze..
+CLPFIN:
+	POP HL		; Restore previous CURLIN
+	LD (CURLIN), HL
+	LD DE, (ARYTAB)		; End of simple var squeeze to [D,E]
+	LD HL, (VARTAB)		; Start of simps
+CLPSLP:
+	LD A, H
+	SUB D
+	RET NZ
+	LD A, L
+	SUB E		; Are we done?
+	JR Z, DNCMDS		; Yes done, with simps
+	PUSH HL		; Save where this simp is
+	LD C, (HL)		; Get VALTYP
+	INC HL
+	INC HL
+	LD A, (HL)		; Get COMMON bit
+	OR A		; Set minus if COMMON
+	PUSH AF		; Save indicator
+	AND LOW 127		; Clear COMMON bit
+	LD (HL), A		; Save back
+	INC HL
+	CALL IADAHL		; Skip over rest of var name
+	LD B, LOW 0		; Skip VALTYP bytes
+	ADD HL, BC
+	POP AF		; Get indicator whether to delete
+	POP BC		; Pointer to where var started
+	JP M, CLPSLP
+	PUSH BC		; This is where we will resume scanning vars later
+	CALL VARDLS		; Delete variable
+	LD HL, (ARYTAB)		; Now correct ARYTAB by # of bytes deleted
+	ADD HL, DE		; Add negative difference between old and new
+	LD (ARYTAB), HL		; Save new ARYTAB
+	EX DE, HL		; To [D,E]
+	POP HL		; Get current place back in [H,L]
+	JR CLPSLP
+VARDLS:
+	EX DE, HL		; Point to where var ends
+VARDL1:
+	LD HL, (STREND)		; One beyond last byte to move
+DLSVLP:
+	LD A, H
+	SUB D
+	RET NZ
+	LD A, L
+	SUB E		; Done?
+	LD IYH, D
+	LD IYL, E
+	LD A, (IY)		; Grab byte
+	LD IXH, B
+	LD IXL, C
+	LD (IX), A		; Move down
+	INC DE
+; Increment pointers
+	INC BC
+	JR NZ, DLSVLP
+	LD A, C		; Get difference between old and new
+	SUB L		; Into [D,E] ([D,E]=[B,C]-[H,L])
+	LD E, A
+	LD A, B
+	SBC H
+	LD D, A
+	DEC DE		; Correct # of bytes
+	DEC BC		; Moved one too far
+	PUSH HL
+	POP BC
+			; Get new STREND [H,L]
+	LD (STREND), HL		; Store it
+	RET
+DNCMDS:
+	LD DE, (STREND)		; Limit of array search
+CLPAKP:
+	LD A, H
+	SUB D
+	RET NZ
+	LD A, L
+	SUB E		; Done?
+	JR Z, DNCMDA		; Yes
+	PUSH HL		; Save pointer to VALTYP
+	INC HL		; Move down to COMMON bit
+	INC HL
+	LD A, (HL)		; Get it
+	OR A		; Set CC's
+	PUSH AF		; Save COMMON indicator
+	AND LOW 127		; Clear COMMON bit
+	LD (HL), A		; Save back
+	INC HL		; Point to length of array
+	CALL IADAHL		; Add length of var name
+	LD C, (HL)		; Get length of array in [B,C]
+	INC HL
+	LD B, (HL)
+	INC HL
+	ADD HL, BC		; [H,L] now points after array
+	POP AF		; Get back COMMON indicator
+	POP BC		; Get pointer to start of array
+	JP M, CLPAKP
+; COMMON, dont delete!
+	PUSH BC		; Save so we can resume
+	CALL VARDLS		; Delete the array
+	EX DE, HL		; Returns with STREND in HL, so put in DE
+	POP HL		; Get back pointer to the next array
+	JR CLPAKP		; Check next array
+;  Step 4 - Copy literals into string space
+;  This code is very similar to the string garbage collect code
+;  If BIGSTR is on, we also have to fix up the string back pointers.
+DNCMDA:
+	LD HL, (VARTAB)		; Look at simple strings
+CSVAR:
+	LD DE, (ARYTAB)		; Limit of search to [D,E]
+	LD A, H
+	SUB D
+	RET NZ
+	LD A, L
+	SUB E		; Done?
+	JR Z, CAYVAR		; Yes
+	CALL SKPNAM		; Skip name, returns Z if was a string
+	JR NZ, CSKPVA		; Skip this var, not string
+	CALL CDVARS		; Copy this guy into string space if nesc
+	XOR A		; CDVARS has already incremented [H,L]
+CSKPVA:
+	LD E, A
+	LD D, LOW 0		; Add length of VALTYP
+	ADD HL, DE
+	JR CSVAR
+CAYVA2:
+	POP BC		; Adjust stack
+CAYVAR:
+	LD DE, (STREND)		; New limit of search
+	LD A, H
+	SUB D
+	RET NZ
+	LD A, L
+	SUB E		; Done?
+	JR Z, DNCCLS		; Yes
+	CALL SKPNAM		; Skip over name
+	PUSH AF		; Save VALTYP
+	LD C, (HL)		; Get length of array
+	INC HL
+	LD B, (HL)		; Into [B,C]
+	INC HL
+	POP AF		; Get back VALTYP
+	PUSH HL		; Save pointer to array element
+	ADD HL, BC		; Point after array
+	CP 3		; String array?
+	JR NZ, CAYVA2		; No, look at next one
+	LD (TEMP3), HL		; Save pointer to end of array
+	POP HL		; Get back pointer to array start
+	LD C, (HL)		; Pick up number of DIMs
+	LD B, LOW 0		; Make double with high zero
+	ADD HL, BC		; Go past DIMS
+	ADD HL, BC
+	INC HL		; One more to account for # of DIMs
+CAYSTR:
+	LD DE, (TEMP3)		; Get end of array
+	LD A, H
+	SUB D
+	RET NZ
+	LD A, L
+	SUB E		; See if at end of array
+	JR Z, CAYVAR		; Get next array
+	LD BC, OFFSET CAYSTR		; Do next str in array
+	PUSH BC		; Save branch address on stack
+CDVARS:
+	LD A, (HL)		; Get length of array entry
+	INC HL		; Also pick up pointer into [D,E]
+	LD DE, (HL)		; Get data pointer
+	INC HL
+	INC HL
+	OR A		; Set CC's on length
+	RET Z
+; Ignore null strings
+	PUSH HL		; Save where we are
+	LD HL, (VARTAB)		; Is string in program text or disk buffers?
+	LD A, H
+	SUB D
+	RET NZ
+	LD A, L
+	SUB E		; Compare
+	POP HL		; Restore where we are
+	RET C
+; No, must be in string space
+	PUSH HL		; save where we are again.
+	LD HL, (TXTTAB)		; is it in buffers?
+	LD A, H
+	SUB D
+	RET NZ
+	LD A, L
+	SUB E		; test
+	POP HL		; Restore where we are
+	RET NC
+; in buffers, do nothing
+	PUSH HL		; Save where we are for nth time
+	DEC HL		; Point to start of descriptor
+	DEC HL
+	DEC HL
+	PUSH HL		; Save pointer to start
+	CALL STRCPY		; Copy string into DSCTMP
+	POP HL		; Destination in [H,L], source in [D,E]
+	LD B, LOW 3		; # of bytes to move
+	CALL MOVE1		; Move em
+	POP HL		; Where we are
+	RET
+;  Step 5 - Move stuff up into string space!
+DNCCLS:
+	CALL GARBA2		; Get rid of unused strings
+	LD HL, (STREND)		; Load end of vars
+	PUSH BC
+	POP HL
+			; Into [B,C]
+	LD DE, (VARTAB)		; Start of simps into [D,E]
+	LD HL, (ARYTAB)
+	SBC HL, DE		; Get length of simps in [H,L]
+	LD (TEMP9), HL		; Save here
+	LD HL, (FRETOP)		; Destination of high byte
+	LD (SAVFRE), HL		; Save FRETOP to restore later
+	CALL BLTUC		; Move stuff up
+	PUSH HL
+	POP BC
+			; Now adjust top of memory below saved vars
+	DEC HL		; One lower to be sure
+	LD (FRETOP), HL		; Update FRETOP to reflect new value
+	LD A, (MDLFLG)		; MERGE w/ DELETE?
+	OR A		; Test
+	JR Z, NTMDLT		; No
+	LD HL, (CMSPTR)		; Start of lines to delete
+	PUSH BC
+	POP HL
+			; Into [B,C]
+	LD HL, (CMEPTR)		; End of lines to delete
+	CALL DEL		; Delete the lines
+	LD (ARYTAB), HL		; ***also set up ARYTAB and STREND
+	LD (STREND), HL		; in case we get error in CHAIN
+; because of file lookup and then have to
+; look at variables later (shouldnt be any)
+; ***PGA 7/7/81
+	CALL LINKER		; Re-link lines just in case
+;  Step 6 - load new program
+NTMDLT:
+	LD A, LOW 1		; Set CHAIN flag
+	LD (CHNFLG), A
+	EXTERN CHNENT:NEAR
+	EXTERN OKGETM:NEAR
+	LD A, (MRGFLG)		; MERGEing?
+	OR A		; Set cc'S
+	JP NZ, OKGETM
+; Do MERGE
+	JP CHNENT		; Jump to LOAD code
+;  Step 7 - Move stuff back down
+	PUBLIC CHNRET
+CHNRET:
+	LD A, (TOPTVL)
+	LD (OPTVAL), A		; RESTORE IOTION BASE VALUE
+	LD A, (TOPTFG)
+	LD (OPTFLG), A		; LRESTORE OPTION FLG
+	XOR A		; Clear CHAIN, MERGE flags
+	LD (CHNFLG), A
+	LD (MRGFLG), A
+	LD HL, (VARTAB)		; Get current VARTAB
+	PUSH BC
+	POP HL
+			; Into [B,C]
+	LD HL, (TEMP9)		; Get length of simps
+	ADD HL, BC		; Add to present VARTAB to get new ARYTAB
+	LD (ARYTAB), HL
+	LD HL, (FRETOP)		; Where to start moving
+	INC HL		; One higher
+	EX DE, HL		; Into [D,E]
+	LD HL, (SAVFRE)		; Last byte to move
+	LD (FRETOP), HL		; Restore FRETOP from this
+MVBKVR:
+	LD A, H
+	SUB D
+	RET NZ
+	LD A, L
+	SUB E		; Done?
+	LD IYH, D
+	LD IYL, E
+	LD A, (IY)		; Move byte down
+	LD IXH, B
+	LD IXL, C
+	LD (IX), A
+	INC DE
+; Increment pointers
+	INC BC
+	JR NZ, MVBKVR
+	DEC BC		; Point to last var byte
+	PUSH HL
+	POP BC
+			; [H,L]=last var byte
+	LD (STREND), HL		; This is new end
+; CSEG DATASG (public)
+	EXTERN NLONLY:WORD
+	XOR A
+	LD (NLONLY), A		; allow all files to be closed
+	EXTERN FINPRT:NEAR
+	CALL FINPRT		; close file zero and reset PTRFIL to 0
+	XOR A
+	CALL RESTORE		; Make sure DATA is valid by doing RESTORE
+	LD DE, (CHNLIN)		; Get CHAIN line # in [D,E]
+	LD HL, (TXTTAB)		; Get prog start in [H,L]
+	DEC HL		; Point at zero before program
+	OR A		; line number zero?
+	JP Z, NEWSTT
+; line #=0, go...
+	CALL FNDLIN		; Try to find destination line
+	JP NC, USERR
+; Not there...
+	DEC BC		; Point to zero on previous line
+	PUSH HL
+	POP BC
+			; Make text pointer for NEWSTT
+	JP NEWSTT		; Bye...
+; 
+;  Convenience routine to skip a variable's name pointed to by HL.
+;  Returns VALTYP in A with the zero flag set if it is a string.
+; 
+	PUBLIC SKPNAM
+SKPNAM:
+	LD A, (HL)		; Get VALTYP
+	INC HL		; Point to length of long var name
+	INC HL
+	INC HL
+	PUSH AF		; Save VALTYP
+	CALL IADAHL		; Move past long variable name
+	POP AF		; Get back VALTYP
+	CP 3		; String?
+	RET
+; 
+; 
+COMMON:
+	JP DATA
+
+;;; WRITE ;;;
+
+	EXTERN FINPRT:NEAR
+	EXTERN FOUT:NEAR
+	EXTERN STRLIT:NEAR
+	EXTERN STRPRT:NEAR
+	EXTERN OUTDO:NEAR
+; CSEG DATASG (public)
+	EXTERN FACLO:WORD
+	PUBLIC WRITE
+WRITE:
+	EXTERN FILGET:NEAR
+	LD C, LOW OFFSET MD_SQO		; Setup output file
+	CALL FILGET
+WRTCHR:
+	DEC HL
+	CALL CHRGTR		; Get another character
+	JR Z, WRTFIN		; Done with WRITE
+WRTMLP:
+	CALL FRMEVL		; Evaluate formula
+	PUSH HL		; Save the text pointer
+	CALL GETYPR		; See if we have a string
+	JR Z, WRTSTR		; We do
+	CALL FOUT		; Convert to a string
+	CALL STRLIT		; Literalize string
+	LD HL, (FACLO)		; Get pointer to string
+	INC HL		; Point to address field
+	LD DE, (HL)
+	INC HL
+	LD IYH, D
+	LD IYL, E
+	LD A, (IY)		; Is number positive?
+	CP " "		; Test
+	JR NZ, WRTNEG		; No, must be negative
+	INC DE
+	LD (HL), D
+	DEC HL
+	LD (HL), E
+	DEC HL
+	DEC (HL)		; Adjust length of string (length.LT.255 so OK)
+WRTNEG:
+	CALL STRPRT		; Print the number
+NXTWRV:
+	POP HL		; Get back text pointer
+	DEC HL		; Back up pointer
+	CALL CHRGTR		; Get next char
+	JR Z, WRTFIN		; end
+	CP 59		; Semicolon?
+	JR Z, WASEMI		; Was one
+	CALL SYNCHR
+	DB 44D
+; Only possib left is comma
+	DEC HL		; to compensate for later CHRGET
+WASEMI:
+	CALL CHRGTR		; Fetch next char
+	LD A, LOW 44		; put out comma
+	CALL OUTDO
+	JR WRTMLP		; Back for more
+WRTSTR:
+	LD A, LOW 34		; put out double quote
+	CALL OUTDO		; Send it
+	CALL STRPRT		; print the string
+	LD A, LOW 34		; Put out another double quote
+	CALL OUTDO		; Send it
+	JR NXTWRV		; Get next value
+WRTFIN:
+	EXTERN CMPFBC:NEAR
+; CSEG DATASG (public)
+	EXTERN PTRFIL:WORD
+	PUSH HL		; Save text pointer
+	LD HL, (PTRFIL)		; See if disk file
+	LD A, H
+	OR L
+	JR Z, NTRNDW		; No
+	PUSH HL		; Save FDB pointer
+	LD BC, OFFSET F_DEV
+	ADD HL, BC		; HL points to Device Entry in FDB
+	LD A, (HL)		; [A]=device id
+	OR A		; if disk [A] will be 0..n
+	POP HL
+	JP M, NTRNDW
+; branch if special device ([A] is negative)
+	PUSH HL
+	LD BC, OFFSET F_MODE
+	ADD HL, BC		; HL points to File Mode Byte in FDB
+	LD A, (HL)		; [A]=file mode
+	POP HL		; Restore FDB pointer
+	CP MD_RND		; Random?
+	JR NZ, NTRNDW		; NO
+	CALL CMPFBC		; See how many bytes left
+	LD A, L		; do subtract
+	SUB E
+	LD L, A
+	LD A, H
+	SBC D
+	LD H, A
+	CRLFSQ=2
+; Number of bytes in CR/LF sequence
+	LD DE, OFFSET 0 -CRLFSQ		; Subtract bytes in <cr>
+	EX AF, AF'
+	ADD HL, DE
+	EX AF, AF'
+	JR NC, NTRNDW		; Not enough, give error eventually
+NXTWSP:
+	LD A, LOW " "		; Put out spaces
+	CALL OUTDO		; Send space
+	DEC HL		; Count down
+	LD A, H		; Count down
+	OR L
+	JR NZ, NXTWSP
+NTRNDW:
+	POP HL		; Restore [H,L]
+	CALL CRDO		; Do crlf
+	JP FINPRT

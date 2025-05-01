@@ -1,0 +1,60 @@
+;  [ This translation created 10-Feb-83 by Version 4.3 ]
+	.radix 8
+;  To be safe
+; CSEG CODESG (public)
+; Assuming segment CS:CSEG
+	include OEM.H
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; GWRAM - GW BASIC OEM Independent RAM Declarations ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; 
+;         --------- --- ---- -- ---------
+;         COPYRIGHT (C) 1981 BY MICROSOFT
+;         --------- --- ---- -- ---------
+;         
+	include GIO86U
+	.radix 10
+	MUSIC=PLAYSW OR BEEPSW
+	GRPMCL=1
+	NMPAGE=1
+	PUBLIC HEDING
+	PUBLIC $DATE
+	PUBLIC CERMSG
+	QUOTE=42O
+	CR=15O
+; 
+
+;;; Sign on message and other data to be discarded after INIT ;;;
+
+HEDING:
+	ACRLF 
+	DB "(C) Copyright Microsoft 1982"
+$DATE:
+	DB "         "
+; $DATE
+	ACRLF 
+	DB 0D
+; Terminate previous string.
+CERMSG:
+	ACRLF  ; Command line error message
+	DB "Error detected in command line"
+	ACRLF 
+	DB 0D
+;  End of code segment constants
+; CSEG DATASG (public)
+;  Start of data segment GW variables
+; Assuming segment DS:DSEG
+; 
+;  ASM86 version don't need to fool around with offsets into OEMBAS,
+;  as the linker can preload segments with data.  Thus, the R macros
+;  need only define the label and a size if the variable is not intitalized.
+; 
+Exception: Don't know how to generate token of type error ({'type': 'error', 'value': "Don't know how to parse token {'type': 'token', 'value': 'R1'}", 'id': 44})
+Traceback (most recent call last):
+  File "/Users/mac/Library/Python/3.9/lib/python/site-packages/z80conv-0.0.1-py3.9.egg/z80conv/conv.py", line 20, in main
+    for line in writer.lines():
+  File "/Users/mac/Library/Python/3.9/lib/python/site-packages/z80conv-0.0.1-py3.9.egg/z80conv/writer.py", line 25, in lines
+    raise SyntaxError("Don't know how to generate token of type %s (%s)" % (token['type'], token))
+SyntaxError: Don't know how to generate token of type error ({'type': 'error', 'value': "Don't know how to parse token {'type': 'token', 'value': 'R1'}", 'id': 44})

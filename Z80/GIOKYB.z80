@@ -1,0 +1,249 @@
+;  [ This translation created 10-Feb-83 by Version 4.3 ]
+	.radix 8
+;  To be safe
+; CSEG CODESG (public)
+; Assuming segment CS:CSEG
+	include OEM.H
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; GIOKYB - Machine Independent Keyboard Device Driver Code ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; 
+; 
+; --------- --- ---- -- ---------
+; COPYRIGHT (C) 1982 BY MICROSOFT
+; --------- --- ---- -- ---------
+; 
+; 	
+	include GIO86U
+; Generic Switches
+; 
+	CPM86=0
+	IBMCSR=IBMLIK
+; IBM compatible cursor interface
+; OEM Switches
+; 
+	MELCO=0
+	COMPAQ=0
+; Local switches
+	INTHND=SCP AND GW
+	include MSDOSU
+	PUBLIC KYBDSP
+	PUBLIC KYBINI
+	PUBLIC KYBTRM
+	EXTERN SCNSWD:NEAR
+	EXTERN SCNGWD:NEAR
+	EXTERN SCNSOT:NEAR
+	EXTERN SCNGPS:NEAR
+	EXTERN SCNGCW:NEAR
+	EXTERN SCNSCW:NEAR
+	EXTERN MAKINT:NEAR
+	EXTERN INIFDB:NEAR
+	EXTERN DERBFM:NEAR
+	EXTERN INITQ:NEAR
+	EXTERN GETQ:NEAR
+	EXTERN PUTQ:NEAR
+	EXTERN DEVBIN:NEAR
+	EXTERN DEVBOT:NEAR
+	EXTERN SCNBRK:NEAR
+	EXTERN EDTBRK:NEAR
+	CTLBRK=65283D
+; &HFF03 is Ctl-Break
+	CTLPAS=65299D
+; &HFF13 is Ctl-Pause
+;  Keyboard Data-Flow/Control-Structure for GIO86:
+; 
+;     PLAY, LIST, NEWSTT                                            INCHRI
+;     --------+---------                                      (fixed length input)
+;             !                                   INLIN               !
+;             !                              (Screen Editor)     KYBSIN/CHGET
+;          CHKINT                                   !        (Device Indep. input)
+;      +-------------+                              !                 !
+;      !             !                              +-----------------+
+;      !             !                                       !
+;      !             !                  INKEY$             KEYIN
+;      !           POLKEY                 !                  !
+;      !             !                    +--------------+---+
+;      !        +----+--------+-------+                  !
+;      !        !    !        !       !                CHSNS (get 1 KEY {may be 2 bytes}
+;      !        !  CNTCCN  KEYTRP  PKEYQ                 !    function key expansion)
+;      !        !    !                !      ------+     !
+;      !        +----+              PUTQ --> ! ! ! !--> CONIN (get 1 byte from queue)
+;      !             !                       ------+
+;   POLLEV         KEYINP(OEM supplied)      (queue)
+; (OEM supp.)      (maps to MS Univ keyboard)
+; (test for trapable event)
+; Keyboard Dispatch Table
+; 
+KYBDSP:
+	dw (KYBEOF)
+; test EOF for file opened to this device
+	dw (KYBLOC)
+; LOC
+	dw (KYBLOF)
+; LOF
+	dw (KYBCLS)
+; perform special CLOSE functions for this device
+	dw (SCNSWD)
+; set device width
+	dw (DERBFM)
+; GET/PUT random record from/to this device
+	dw (KYBOPN)
+; perform special OPEN functions for this device
+	dw (KYBSIN)
+; input 1 byte from file opened on this device
+	dw (SCNSOT)
+; output 1 byte to file opened on this device
+	dw (SCNGPS)
+; POS
+	dw (SCNGWD)
+; get device width
+	dw (SCNSCW)
+; set device comma width
+	dw (SCNGCW)
+; get device comma Width
+	dw (DEVBIN)
+; block input from file opened on this device
+	dw (DEVBOT)
+; block output to file opened on this device
+
+;;; Keyboard Primitive I/O Routines ;;;
+
+	EXTERN BCHRSI:NEAR
+; KYBINI puts the keyboard device server in an initial state.
+;  It is called at initialization time and after CTL-C.
+;  On exit, all registers are preserved.
+; 
+	EXTERN FINPRT:NEAR
+	EXTERN PDCBAX:NEAR
+; CSEG DATASG (public)
+; Assuming segment DS:DSEG
+	EXTERN KYBQDS:WORD
+	EXTERN KYBQUE:WORD
+	EXTERN KYBQSZ:WORD
+KYBINI:
+	PUSH AF
+	PUSH HL
+	PUSH BC
+	PUSH DE
+	PUSH AF
+	PUSH IY
+	; FIXME: Invalid Z80 code
+	LD AF, 0
+	LD (WORDPTRCMDOFF), AX		; [CMDOFF]=0 (no soft key)
+	LD IYH, (
+	LD IYL, K		; SI = keyboard queue descriptor
+	LD HL, (KYBQUE)		; BX points to 1st byte of queue buff
+	LD AX, (KYBQSZ)		; AX = size of keyboard queue
+	CALL INITQ		; Initialize keyboard queue
+	CALL FINPRT		; reset PTRFIL to Keyboard/CRT
+	POP IY
+	POP AF
+	JP PDCBAX		; POP DX, CX, BX, AX and return
+	PUBLIC KYBCLR
+; KYBCLR - Clear the keyboard buffer
+; This routine has been documented to OEMs.  The routine is intended to support
+; the IBM poke which clears the keyboard buffer.
+; Entry - none
+; Exit  - none
+;         Segment registers and stack preserved.
+; 
+KYBCLR:
+	CALL KYBINI		; Initialize the keyboard buffer
+	RET
+; KYBEOF - test for End-Of-File on device.
+;  Entry - SI points to File-Data-Block.
+;  Exit  - [BX] = -1 if EOF, 0 if not EOF
+; 
+	EXTERN INCHSI:NEAR
+KYBEOF:
+	LD HL, 0		; 0 means not at eof
+	OR A
+	JP Z, KBEOFX		; branch if not pseudo keyboard FDB
+	CALL INCHSI		; [AL]=next byte from keyboard
+	JP C, YKYEOF		; branch if next key = CTL-Z
+	CALL BCHRSI		; put this back in queue
+KBEOFX:
+	RET
+YKYEOF:
+	DEC HL		; BX=-1, end-of-file is true
+KYBTRM:
+	RET
+; KYBLOC - Number of Bytes in input buffer for KEYBOARD device.
+;  Entry - SI points to File-Data-Block.
+;  Exit  - [BX] = result.
+; 
+KYBLOC:
+	PUSH IY		; save FDB pointer
+	LD IYH, (
+	LD IYL, K		; SI points to KYB queue descriptor
+	EXTERN NUMQ:NEAR
+	CALL NUMQ		; [AX]=number of bytes queued in KYB Q
+	POP IY
+	PUSH HL
+	POP AX
+			; return result in BX
+	; TEST {'type': 'instruction', 'op': 'TEST', 'operands': (('BYTE', 'PTR', 'F_FLGS[SI]'), ('LOW', 'OFFSET', 'FL_BKC')), 'comment': None, 'id': 170}
+	JP Z, KYLOCX		; branch if char not backed up
+	INC HL
+KYLOCX:
+	RET
+; KYBLOF - number of bytes free in KEYBOARD input buffer.
+;  Entry - SI points to File-Data-Block.
+;  Exit  - [Floating-Point-Accumulator] = result.
+; 
+KYBLOF:
+	LD IYH, (
+	LD IYL, K		; SI points to KYB queue descriptor
+	EXTERN LFTQ:NEAR
+	CALL LFTQ		; [AX]=number of bytes free in KYB Q
+	PUSH HL
+	POP AX
+	
+	JP MAKINT		; return result in FAC
+; KYBCLS - perform any device dependent close functions.
+;  Entry - SI points to File-Data-Block.
+;  Exit  - All registers preserved.
+;          This routine is called before BASIC releases the
+;          file-data-block associated with this file.
+; 
+KYBCLS:
+RET11:
+	RET
+; KYBOPN - perform any device dependent open functions.
+;  Entry - [AL]=  device id
+;                 0 if default device,
+;                 1..n for Disk A:, B:, ...
+;                 -1..-n for non-disk devices
+;          [BX] = file number (0..n)
+;          [CX] = random record size if [FILMOD] = random
+;                 (if [CX] = 0, use default record size)
+;          [DI] = device offset (2=KYBD, 4=SCRN, etc.)
+;          [FILMOD] = file mode
+;                     MD.SQI = 1 ;sequential input
+;                     MD.SQO = 2 ;sequential output
+;                     MD.RND = 3 ;random
+;                     MD.APP = 4 ;append
+;          [FILNAM] = filename
+;          [FILEXT] = 1..3 byte filename extension
+;  Exit  - [SI] points to new FDB
+;          FDB is linked into FDB chain with all standard
+;          fields initialized.
+;          All other registers are preserved.
+; 
+KYBOPN:
+	LD AH, LOW OFFSET MD_SQI		; allow input only
+; CSEG DATASG (public)
+	EXTERN FILMOD:WORD
+Exception: Don't know how to generate CMP: {'type': 'instruction', 'op': 'CMP', 'operands': (('BYTE', 'PTR', 'FILMOD'), ('LOW', 'OFFSET', 'MD_RND')), 'comment': None, 'id': 219}
+Traceback (most recent call last):
+  File "/Users/mac/Library/Python/3.9/lib/python/site-packages/z80conv-0.0.1-py3.9.egg/z80conv/conv.py", line 20, in main
+    for line in writer.lines():
+  File "/Users/mac/Library/Python/3.9/lib/python/site-packages/z80conv-0.0.1-py3.9.egg/z80conv/writer.py", line 27, in lines
+    line = getattr(self, generator)(token)
+  File "/Users/mac/Library/Python/3.9/lib/python/site-packages/z80conv-0.0.1-py3.9.egg/z80conv/writer.py", line 801, in _gen_instruction
+    instr = getattr(self, '_gen_instruction_' + op.lower())(token)
+  File "/Users/mac/Library/Python/3.9/lib/python/site-packages/z80conv-0.0.1-py3.9.egg/z80conv/writer.py", line 264, in _gen_instruction_cmp
+    raise SyntaxError("Don't know how to generate CMP: %s" % token)
+SyntaxError: Don't know how to generate CMP: {'type': 'instruction', 'op': 'CMP', 'operands': (('BYTE', 'PTR', 'FILMOD'), ('LOW', 'OFFSET', 'MD_RND')), 'comment': None, 'id': 219}

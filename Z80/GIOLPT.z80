@@ -1,0 +1,209 @@
+;  [ This translation created 10-Feb-83 by Version 4.3 ]
+	.radix 8
+;  To be safe
+; CSEG CODESG (public)
+; Assuming segment CS:CSEG
+	include OEM.H
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; GIOLPT - Line Printer Machine Independent Device Driver Code ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; 
+; 
+; --------- --- ---- -- ---------
+; COPYRIGHT (C) 1982 BY MICROSOFT
+; --------- --- ---- -- ---------
+; 
+; 	
+	include GIO86U
+	MELCO=0
+	TETRA=0
+	ZENITH=0
+	CPM86=0
+	include MSDOSU
+; OEM Switches
+; 
+	PUBLIC LPTDSP
+	PUBLIC LPTINI
+	PUBLIC LPTTRM
+	EXTERN DERBFM:NEAR
+	EXTERN INIFDB:NEAR
+	EXTERN UPDPOS:NEAR
+	EXTERN $_LPT1:NEAR
+	EXTERN DEVBOT:NEAR
+	EXTERN DEVBIN:NEAR
+; Line Printer Dispatch Table
+; 
+LPTDSP:
+	dw (DERBFM)
+; test EOF for file opened to this device
+	dw (DERBFM)
+; LOC
+	dw (DERBFM)
+; LOF
+	dw (LPTCLS)
+; perform special CLOSE functions for this device
+	dw (LPTSWD)
+; set device width
+	dw (DERBFM)
+; GET/PUT random record from/to this device
+	dw (LPTOPN)
+; perform special OPEN functions for this device
+	dw (DERBFM)
+; input 1 byte from file opened on this device
+	dw (LPTSOT)
+; output 1 byte to file opened on this device
+	dw (LPTGPS)
+; POS
+	dw (LPTGWD)
+; get device width
+	dw (LPTSCW)
+; set device comma width
+	dw (LPTGCW)
+; get device comma width
+	dw (DEVBIN)
+; block input from file opened on this device
+	dw (DEVBOT)
+; block output to file opened on this device
+LPTTRM:
+	RET
+
+;;; Line Printer Primitive I/O Routines ;;;
+
+; CSEG DATASG (public)
+; Assuming segment DS:DSEG
+	EXTERN LP1DCB:WORD
+; LPT Device Control Block field definitions:
+; 
+	_LPWID=0
+; device width (columns per line)
+	_LPPOS=1
+; current column device is in
+	_LPFLG=2
+; Boolean attributes mask for this device
+	_LPCRF=1
+; non-zero=last char sent was Carriage Return
+; LPTINI - called during BASIC initialization
+;  Entry - DI = -2*device id
+; 
+LPTINI:
+	PUSH IX
+	CALL GLPDCB		; DI points to device control block
+	LD (_LPWID[DI]), LOW 80		; default width = 80 chars / line
+	LD (_LPPOS[DI]), LOW 0		; initial position = 0
+	LD (_LPFLG[DI]), LOW 0		; reset device Flags
+	POP IX
+	RET
+; LPTCLS - perform any device dependent close functions.
+;  Entry - SI points to File-Data-Block.
+;          DI = -2*device id
+;  Exit  - All registers preserved.
+;          This routine is called before BASIC releases the
+;          file-data-block associated with this file.
+; 
+LPTCLS:
+	RET
+; LPTSWD - set device width
+;  Entry - [DX] = new device width
+;          DI = -2*device id
+; 
+LPTSWD:
+	CALL GLPDCB		; DI points to device control block
+	LD (_LPWID[DI]), E
+	RET
+	EXTERN DERIFN:NEAR
+	EXTERN SCDBIN:NEAR
+; CSEG DATASG (public)
+	EXTERN FILOPT:WORD
+; LPTOPN - perform any device dependent open functions.
+;  Entry - [AL]=  device id
+;                 0 if default device,
+;                 1..n for Disk A:, B:, ...
+;                 -1..-n for non-disk devices
+;          [BX] = file number (0..n)
+;          [CX] = random record size if [FILMOD] = random
+;                 (if [CX] = 0, use default record size)
+;          [DI] = device offset (2=LPTD, 4=SCRN, etc.)
+;          [FILMOD] = file mode (one of the following)
+;                     MD.SQI     ;sequential input
+;                     MD.SQO     ;sequential output
+;                     MD.RND     ;random
+;                     MD.APP     ;append
+;          [FILNAM] = filename
+;          [FILEXT] = 1..3 byte filename extension
+;  Exit  - [SI] points to new FDB
+;          FDB is linked into FDB chain with all standard
+;          fields initialized.
+;          All other registers are preserved.
+; 
+LPTOPN:
+	PUSH AF		; save device id for INIFDB
+	CALL GLPDCB		; DI points to device control block
+	LD IYH, (
+	LD IYL, F		; SI points to options string
+	LD AH, LOW 223		; 0DFH - Mask for mapping lower to upper case
+	; CLD		; use Post-Increment addressing
+	; LODSB {'type': 'instruction', 'op': 'LODSB', 'operands': (), 'comment': '[AL]=1st byte of option string', 'id': 134}		; [AL]=1st byte of option string
+	AND A H		; Map Lower to Upper Case (turn off b6)
+	PUSH AF		; remember if BIN option was selected
+	JP Z, NOOPT		; branch if no option specified
+	CP "B"
+	JP NZ, IFNERR		; Bad File Name error if option not BIN
+	; LODSB {'type': 'instruction', 'op': 'LODSB', 'operands': (), 'comment': '[AL]=next byte of option string', 'id': 140}		; [AL]=next byte of option string
+	AND A H		; Map Lower Case to Upper Case
+	CP "I"
+	JP NZ, IFNERR		; Bad File Name error if option not BIN
+	; LODSB {'type': 'instruction', 'op': 'LODSB', 'operands': (), 'comment': '[AL]=next byte of option string', 'id': 144}		; [AL]=next byte of option string
+	AND A H		; Map Lower Case to Upper Case
+	CP "N"
+	JP NZ, IFNERR		; Bad File Name error if option not BIN
+	; LODSB {'type': 'instruction', 'op': 'LODSB', 'operands': (), 'comment': '[AL]=next byte of option string', 'id': 148}		; [AL]=next byte of option string
+	OR A
+	JP NZ, IFNERR		; Error if not end of options
+NOOPT:
+	LD D, (_LPPOS[DI])		; initial file column position
+	LD E, (_LPWID[DI])		; initial file width
+	POP AF
+	POP AF		; [AL]=device id
+	PUSH AF		; remember if BIN option was selected
+	LD AH, LOW OFFSET MD_SQO OR MD_RND		; allow open for output/random
+	CALL INIFDB
+	POP AF
+	JP Z, NOBIN		; branch if BIN option was not selected
+	CALL SCDBIN		; set BINARY file mode
+NOBIN:
+	RET
+IFNERR:
+	JP DERIFN		; "illegal filename" error
+; LPTSOT - Sequential Output.
+;  Entry - SI points to File-Data-Block.  0 if Pseudo FDB (for LLIST/LPRINT)
+;          DI = -2*device id
+;          [AL] = byte to be output.
+;  Exit  - SI, DI can be changed.
+;          All other registers preserved
+;          This routine keeps track of column position,
+;          expands tabs, and forces a carriage return when line width
+;          is exceeded.
+; 
+LPTSOT:
+	PUSH HL		; save caller's BX
+	PUSH AF		; save char to be output
+	CALL GLPDCB		; DI points to line printer DCB
+	LD L, A		; [BL] = device id
+	POP AF		; [AL] = byte to be output
+	LD AH, L		; [AH] = device id
+	POP HL		; restore caller's BX
+	OR A
+	JP Z, NOTBIN		; branch if not binary mode
+Exception: Don't know how to generate CMP {'type': 'instruction', 'op': 'CMP', 'operands': (('BYTE', 'PTR', 'F_CODE[SI]'), ('LOW', 'OFFSET', 'FC_BIN')), 'comment': None, 'id': 186}
+Traceback (most recent call last):
+  File "/Users/mac/Library/Python/3.9/lib/python/site-packages/z80conv-0.0.1-py3.9.egg/z80conv/conv.py", line 20, in main
+    for line in writer.lines():
+  File "/Users/mac/Library/Python/3.9/lib/python/site-packages/z80conv-0.0.1-py3.9.egg/z80conv/writer.py", line 27, in lines
+    line = getattr(self, generator)(token)
+  File "/Users/mac/Library/Python/3.9/lib/python/site-packages/z80conv-0.0.1-py3.9.egg/z80conv/writer.py", line 801, in _gen_instruction
+    instr = getattr(self, '_gen_instruction_' + op.lower())(token)
+  File "/Users/mac/Library/Python/3.9/lib/python/site-packages/z80conv-0.0.1-py3.9.egg/z80conv/writer.py", line 189, in _gen_instruction_cmp
+    raise SyntaxError("Don't know how to generate CMP %s" % str(token))
+SyntaxError: Don't know how to generate CMP {'type': 'instruction', 'op': 'CMP', 'operands': (('BYTE', 'PTR', 'F_CODE[SI]'), ('LOW', 'OFFSET', 'FC_BIN')), 'comment': None, 'id': 186}

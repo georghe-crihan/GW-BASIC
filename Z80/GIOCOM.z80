@@ -1,0 +1,239 @@
+;  [ This translation created 10-Feb-83 by Version 4.3 ]
+	.radix 8
+;  To be safe
+; CSEG CODESG (public)
+; Assuming segment CS:CSEG
+	include OEM.H
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; GIOCOM - Communications Machine Independent Device Driver Code ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; 
+; 
+; --------- --- ---- -- --------- -----------
+; COPYRIGHT (C) 1982 BY MICROSOFT CORPORATION
+; --------- --- ---- -- --------- -----------
+; 
+;         by Tom Corbett  Microsoft Corp.
+;         
+	include GIO86U
+	CPM86=0
+	COMPAQ=0
+; Include IBM 1.0/1.1 Bugs for compatibility
+	include MSDOSU
+	PUBLIC COMDSP
+	PUBLIC COMINI
+	PUBLIC COMTRM
+	EXTERN DERBFM:NEAR
+	EXTERN INIFDB:NEAR
+	EXTERN UPDPOS:NEAR
+	EXTERN $_COM1:NEAR
+	EXTERN BCHRSI:NEAR
+	EXTERN MAKINT:NEAR
+	EXTERN DEVBIN:NEAR
+	EXTERN DEVBOT:NEAR
+; Communications Dispatch Table
+; 
+COMDSP:
+	dw (COMEOF)
+; test EOF for file opened to this device
+	dw (COMLOC)
+; LOC
+	dw (COMLOF)
+; LOF
+	dw (COMCLS)
+; perform special CLOSE functions for this device
+	dw (COMSWD)
+; set device width
+	dw (COMRND)
+; GET/PUT random record from/to this device
+	dw (COMOPN)
+; perform special OPEN functions for this device
+	dw (COMSIN)
+; input 1 byte from file opened on this device
+	dw (COMSOT)
+; output 1 byte to file opened on this device
+	dw (COMGPS)
+; POS
+	dw (COMGWD)
+; get device width
+	dw (COMSCW)
+; set device comma width
+	dw (COMGCW)
+; get device comma Width
+	dw (DEVBIN)
+; block input from file opened on this device
+	dw (DEVBOT)
+; block output to file opened on this device
+
+;;; Communications Generalized I/O Routines ;;;
+
+;  RS232 Device Control Block Definition:
+; 
+;    mneumonic offset    use
+;    --------- ------    ---------------------------------------
+	_DEVID=0D
+; RS232 Channel ID (0..n)
+	_BAUDR=1D
+; baud rate (least significant byte 1st)
+; (0=disable device, 9600=9600 baud etc.)
+	_BYTSZ=3D
+; bits per byte (4..8)
+	_PARIT=4D
+; parity (0..4)=...(NONE, ODD, EVEN, MARK, SPACE)
+	_STOPB=5D
+; (0..2)= (1, 1.5, 2) stop bits
+	_RLSTO=6D
+; RLSD (rec. line signal detect) timeout
+	_CTSTO=8D
+; CTS (clear to send) timeout
+	_DSRTO=10D
+; DSR (data set ready) timeout
+; All timeout values are in milliseconds.
+; 0=infinite, LSB is always 1st.
+; Support of Timeout Flags by BIOS is
+; optional.
+	_CMFLG=12D
+; Boolean attributes mask for this device
+	_CMBIN=1O
+; (0/1)=ASCII/BINARY (ASC option not in filename)
+	_CMRTS=2O
+; non-zero=Suppress Request-To-Send (RS option)
+	_CMCOD=20O
+; non-zero=user specified ASC or BIN in filename
+	_CMCTS=40O
+; non-zero=CTS parm not defaulted
+	_CMCLF=100O
+; non-zero=Send line feed after CR
+	_CMCRF=200O
+; non-zero=last char sent was Carriage Return
+; If COM filename contains "ASC", .CMBIN=0, .CMCOD=1
+; If COM filename contains "BIN", .CMBIN=1, .CMCOD=1
+; If COM filename contains neither "ASC" nor "BIN", .CMBIN=1, .CMCOD=0
+; If COM filename contains both "ASC" and "BIN", Illegal Filename occurs
+; COM DCB Entries which are only of interest to BASIC (Not OEM routines)
+; 
+; *********************************************
+; *** .CMPOS must immediately follow .CMWID ***
+; *********************************************
+	_CMWID=13D
+; device width (columns per line)
+	_CMPOS=14D
+; current column device is in **must follow .CMWID**
+	_CMFDB=15D
+; points to FDB for file (0=not opened)
+	CDCBSZ=24D
+; bytes per COM Device Control Block (room for growth)
+	EXTERN INICOM:NEAR
+	EXTERN RECCOM:NEAR
+	EXTERN SNDCOM:NEAR
+	EXTERN STACOM:NEAR
+	EXTERN TRMCOM:NEAR
+; OEM routines
+	EXTERN POLKEY:NEAR
+	EXTERN DERIFN:NEAR
+; CSEG DATASG (public)
+; Assuming segment DS:DSEG
+	EXTERN CM1DCB:WORD
+; COMINI - called during BASIC initialization
+;  Entry - DI = -2*device id
+; 
+	PUBLIC COMINI
+	PUBLIC COMTRM
+COMINI:
+	PUSH IX
+	CALL GCMDCB		; DI points to device control block
+	LD (_CMWID[DI]), LOW 255		; default is infinite width
+	LD WORD PTR _CMFDB[DI], 0		; mark this device as available for open
+	POP IX
+COMTRM:
+; Com Termination Routine (End-of-BASIC)
+	RET		;  No action required
+; POLCOM is called by CHKINT at beginning of every BASIC statement (NEWSTT).
+;  For each COM device which is opened to a device, it calls COMTRP if that
+;  device has input data waiting.
+;  Exit - AX, BX, CX, DX can be used (restored by CHKINT).
+;         All other registers are preserved.
+; 
+	PUBLIC POLCOM
+	EXTERN COMTRP:NEAR
+POLCOM:
+	PUSH IX
+	PUSH IY
+	LD IXH, (
+	LD IXL, C		; DI points to device control block 1
+	LD DE, OFFSET NMCOMT		; [DH]=COM unit#, [DL]=number of COM units
+POLCML:
+	CALL POLCM1		; test unit 1 for trap
+	ADD IX, OFFSET CDCBSZ		; DI points to next device control block
+	INC D		; Bump unit id
+	DEC E		; Decrement unit counter
+	JP NZ, POLCML		; branch if any more to test
+	POP IY
+	POP IX
+	RET
+; POLCM1 checks 1 COM device to see if input is waiting, if so, it calls COMTRP
+; 
+POLCM1:
+	LD IYH, W
+	LD IYL, O		; SI points to FDB (if device is opened)
+	OR A
+	JP Z, PLCM1X		; return if device not opened
+	; TEST {'type': 'instruction', 'op': 'TEST', 'operands': (('BYTE', 'PTR', 'F_FLGS[SI]'), ('LOW', 'OFFSET', 'FL_BKC')), 'comment': None, 'id': 168}
+	JP NZ, POLTRP		; branch if backup-char present
+	LD AH, D		; [AH]=Unit#
+	PUSH DE		; save Unit#
+	CALL GCOMSZ		; [DX]=number of bytes queued
+	OR A		; test it
+	POP DE		; restore Unit#
+POLTRP:
+	LD A, D		; [AL]=trap id (0..n)
+	JP Z, PLCM1X		; branch if no com data queued
+	CALL COMTRP		; so ON-COM service routine will be called
+PLCM1X:
+	RET
+; Get COM bytes in queue
+;        On entry: AH = unit number
+;        On return: DX=bytes in queue
+;                   CX=free bytes in queue
+;                    Does error processing if gets error from COM channel
+GCOMSZ:
+	PUSH AF
+	CALL STACOM
+	OR A		; Check status here even though
+; CKCMER does for speed.
+	JP NZ, CKCMER		; branch if got error from COM
+	POP AF
+RET14:
+	RET
+;  Check for COM I/O error and output COM Error Message if error occured.
+;  Entry - [AH] = non-zero if error occured
+; 
+	EXTERN STROUT:NEAR
+	EXTERN OUTDO:NEAR
+	EXTERN ERROR:NEAR
+	EXTERN ERRCBO:NEAR
+	EXTERN ERRDPE:NEAR
+	EXTERN ERRDTO:NEAR
+	EXTERN ERRDIO:NEAR
+CKCMER:
+	OR A
+	JP Z, RET14		; branch if no COM I/O error detected
+	LD A, AH
+	; FIXME: This is invalid Z80 code
+	PUSH AF
+	XOR A
+	LD B', 0
+	POP AF		; [AX]=error code 1..n
+Exception: Don't know how to generate DEC with arg AX
+Traceback (most recent call last):
+  File "/Users/mac/Library/Python/3.9/lib/python/site-packages/z80conv-0.0.1-py3.9.egg/z80conv/conv.py", line 20, in main
+    for line in writer.lines():
+  File "/Users/mac/Library/Python/3.9/lib/python/site-packages/z80conv-0.0.1-py3.9.egg/z80conv/writer.py", line 27, in lines
+    line = getattr(self, generator)(token)
+  File "/Users/mac/Library/Python/3.9/lib/python/site-packages/z80conv-0.0.1-py3.9.egg/z80conv/writer.py", line 801, in _gen_instruction
+    instr = getattr(self, '_gen_instruction_' + op.lower())(token)
+  File "/Users/mac/Library/Python/3.9/lib/python/site-packages/z80conv-0.0.1-py3.9.egg/z80conv/writer.py", line 364, in _gen_instruction_dec
+    raise SyntaxError("Don't know how to generate DEC with arg %s" % op)
+SyntaxError: Don't know how to generate DEC with arg AX

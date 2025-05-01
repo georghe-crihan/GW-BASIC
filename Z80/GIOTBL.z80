@@ -1,0 +1,129 @@
+;  [ This translation created 10-Feb-83 by Version 4.3 ]
+	.radix 8
+;  To be safe
+; CSEG CODESG (public)
+; Assuming segment CS:CSEG
+	include OEM.H
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; GIOTBL - Device Name Table ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Dispatch Table Address Tables ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;                 Initialization and Termination Dispatch Tables
+; 
+; 
+; --------- --- ---- -- ---------
+; COPYRIGHT (C) 1982 BY MICROSOFT
+; --------- --- ---- -- ---------
+; 
+;         
+	include GIO86U
+	include MSDOSU
+; MSDOS Constant Definitions
+IF CPM86
+	include CPM86U
+; CPM86 Constant Definitions
+ENDIF
+	.radix 10
+	CPM86=0
+; CPM86
+; Device Switches
+	PUBLIC _DVTBL
+	PUBLIC _DVPTR
+	PUBLIC _DVINI
+	PUBLIC _DVTRM
+	PUBLIC $_NDEV
+	EXTERN DSKDSP:NEAR
+	EXTERN KYBDSP:NEAR
+	EXTERN KYBINI:NEAR
+	EXTERN KYBTRM:NEAR
+	EXTERN SCNDSP:NEAR
+	EXTERN SCNINI:NEAR
+	EXTERN SCNTRM:NEAR
+	EXTERN LPTDSP:NEAR
+	EXTERN LPTINI:NEAR
+	EXTERN LPTTRM:NEAR
+	EXTERN COMDSP:NEAR
+	EXTERN COMINI:NEAR
+	EXTERN COMTRM:NEAR
+	EXTERN CONDSP:NEAR
+	EXTERN _RET:NEAR
+
+;;; Device name table ;;;
+
+; *****************************************************************
+; ***                                                            ***
+; ***  Note:                                                     ***
+; ***    When adding additional devices, be sure to update       ***
+; ***    OEMRAM to add device control blocks if necessary.       ***
+; ***    Change $1STSD and $LSTSD if necessary.  Change NMCOMT   ***
+; ***    in switch file if adding COM device.                    ***
+; ***                                                            ***
+; ******************************************************************
+NDEV MACRO NAM, DSPADR, INIADR, TRMADR, N
+	DEV NAM&N, DSPADR, INIADR, TRMADR
+ENDM
+NAMES MACRO 
+	DEV KYBD, KYBDSP, KYBINI, KYBTRM ; Keyboard
+	DEV SCRN, SCNDSP, SCNINI, SCNTRM ; Crt
+	DEV CONS, CONDSP, _RET, _RET ; Raw-I/O Crt (Esc Sequences)
+	NLPT=0
+REPT NMLPT
+	NLPT=NLPT+1
+	NDEV LPT, LPTDSP, LPTINI, LPTTRM, %NLPT ; Line printer
+ENDM
+	NCAS=0
+REPT GWCASS
+	NCAS=NCAS+1
+	NDEV CAS, CASDSP, CASINI, CASTRM, %NCAS ; Line printer
+ENDM
+	NCOM=0
+REPT NMCOMT
+	NCOM=NCOM+1
+	NDEV COM, COMDSP, COMINI, COMTRM, %NCOM ; COM channel NCOM
+ENDM
+ENDM
+; Generate DEVTBL ( text followed by device # )
+; 
+	NUM=377O
+DEV MACRO NAM, DSPADR, INIADR, TRMADR
+	PUBLIC $_&NAM
+	$_&NAM=NUM
+	DB "&NAM&"
+	DB NUM
+	NUM=NUM-1
+ENDM
+_DVTBL:
+	NAMES 
+	DB 0D
+; 0 ends table
+	$_NDEV=377O-NUM
+; number of non-disk Devices
+; Generate DEVPTR ( Addresses of dispatch tables )
+; 
+DEV MACRO NAM, DSPADR, INIADR, TRMADR
+	dw ('offset', 'DSPADR')
+ENDM
+_DVPTR:
+	dw (DSKDSP)
+; 1st entry in dispatch table is Disk Dispatch table
+	NAMES  ; then 1 entry for each device
+; Generate Initialization Dispatch table
+; 
+DEV MACRO NAM, DSPADR, INIADR, TRMADR
+	dw ('offset', 'INIADR')
+ENDM
+_DVINI:
+	NAMES  ; address of initialization routine for each device
+; Generate Termination Dispatch table
+; 
+DEV MACRO NAM, DSPADR, INIADR, TRMADR
+	dw ('offset', 'TRMADR')
+ENDM
+_DVTRM:
+	NAMES  ; address of termination routine for each device

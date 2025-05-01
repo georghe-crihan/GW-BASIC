@@ -1,0 +1,89 @@
+;  [ This translation created 10-Feb-83 by Version 4.3 ]
+	.radix 8
+;  To be safe
+; CSEG CODESG (public)
+; Assuming segment CS:CSEG
+	include OEM.H
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; ITSA86 - Resident Initialization for I8086 ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; 
+; 
+; --------- --- ---- -- --------- -----------
+; COPYRIGHT (C) 1982 BY MICROSOFT CORPORATION
+; --------- --- ---- -- --------- -----------
+; 
+;         by Len Oorthuys Microsoft Corp.
+;         
+; ************************************************************************
+; *                                                                      *
+; *  NOTE: Any code linked after this module is discarded after          *
+; *        Initialization of BASIC.                                      *
+; *                                                                      *
+; ************************************************************************
+	include GIO86U
+	CPM86=0
+	TETRA=0
+; Save DS in DATSEG(defined in CS and
+;    used by interrupt routine).
+	include MSDOSU
+; CSEG DATASG (public)
+; Assuming segment DS:DSEG
+	EXTERN TEMP8:WORD
+	EXTERN TXTTAB:WORD
+	EXTERN NODSKS:NEAR
+	EXTERN LRUN:NEAR
+	EXTERN READY:NEAR
+	PUBLIC WORDS
+WORDS:
+	DB " Bytes free"
+; WORDS
+	DB 0D
+
+;;; INITSA ;;;
+
+	PUBLIC INITSA
+INITSA:
+	CALL NODSKS
+	CALL MAPINI		; Init the new memory map
+	LD HL, (WORDPTRTXTTAB)
+	DEC HL
+	LD WORD PTR 0 [BX], 0
+	LD HL, (WORDPTRTEMP8)		; POINT TO START OF COMMAND LINE
+	LD A, BYTE PTR 0 [BX]		; GET BYTE POINTED TO
+	OR A		; IF ZERO, NO FILE SEEN
+	JP Z, GREADY
+	JP LRUN		; TRY TO RUN FILE
+GREADY:
+	JP READY
+; BASVAR - Retrieve or Modify BASIC Internal Data Locations
+; This routine provides a method to retrieve or modify certain BASIC internal
+; data locations.  This routine is provided as support for PEEK and
+; POKE filsters.  These data items have been documented to IBM GW BASIC users
+; in the IBM Technical Reference Manual.
+; 
+; Entry - AX = Value to set (if PSW.C set)
+;         BX = 0 for current program line number
+;              1 for last program line containing an error
+;              2 for address of user program text
+;              3 for address of user variable table
+;         PSW.C set indicates to write the variable
+;         PSW.C reset indicates to read the variable
+; Exit  - AX = value of appropriate variable
+;         BX modified
+; 
+; CSEG DATASG (public)
+	EXTERN CURLIN:WORD
+	EXTERN ERRLIN:WORD
+	EXTERN TXTTAB:WORD
+	EXTERN VARTAB:WORD
+	PUBLIC BASVAR
+BVTAB:
+	dw ('offset', 'CURLIN')
+	dw ('offset', 'ERRLIN')
+	dw ('offset', 'TXTTAB')
+	dw ('offset', 'VARTAB')
+BASVAR:
+	PUSH AF

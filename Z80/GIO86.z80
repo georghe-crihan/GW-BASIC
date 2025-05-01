@@ -1,0 +1,780 @@
+;  [ This translation created 10-Feb-83 by Version 4.3 ]
+	.radix 8
+;  To be safe
+; CSEG CODESG (public)
+; Assuming segment CS:CSEG
+	include OEM.H
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; GIO86   - BASIC-86 Interpreter Device Independent I/O Module ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; 
+; 
+; --------- --- ---- -- ---------
+; COPYRIGHT (C) 1982 BY MICROSOFT
+; --------- --- ---- -- ---------
+; 
+;         T. Corbett      Microsoft Inc.
+; 
+;         
+	include GIO86U
+	CPM86=0
+	IBMCSR=IBMLIK
+; IBM Compatible Cursor Handling
+	include MSDOSU
+; CSEG DATASG (public)
+; Assuming segment DS:DSEG
+	EXTERN DEVPTR:WORD
+	EXTERN DEVTBL:WORD
+	EXTERN DEVINI:WORD
+	EXTERN DEVTRM:WORD
+	EXTERN NLONLY:WORD
+	EXTERN RUNFLG:WORD
+	EXTERN FILMOD:WORD
+	EXTERN FILDEV:WORD
+	EXTERN FILNM:WORD
+	EXTERN FILEXT:WORD
+	EXTERN PTRFIL:WORD
+	EXTERN FILTAB:WORD
+	EXTERN STKLOW:WORD
+	EXTERN SNERR:NEAR
+	EXTERN FCERR:NEAR
+	EXTERN FRESTR:NEAR
+	EXTERN GETYPR:NEAR
+	EXTERN $_KYBD:NEAR
+	EXTERN $_LPT1:NEAR
+	EXTERN $_NDEV:NEAR
+	EXTERN DERBFM:NEAR
+	EXTERN DERBFN:NEAR
+	EXTERN DERFAO:NEAR
+	EXTERN DERFNO:NEAR
+	EXTERN DERIFN:NEAR
+	EXTERN DERDNA:NEAR
+	EXTERN DERFDR:NEAR
+DOSIO MACRO DFUN
+	LD AH, LOW OFFSET DFUN
+	; INT 33D		; MS-DOS system call
+ENDM
+
+;;; OPEN statement ;;;
+
+	PUBLIC OPEN
+	EXTERN $LEN:NEAR
+	EXTERN EQULTK:NEAR
+	EXTERN $FOR:NEAR
+	EXTERN $INPUT:NEAR
+	EXTERN GETBYT:NEAR
+	EXTERN GWWID:NEAR
+;  OPEN Statement
+;  Syntax:
+;   OPEN filespec FOR mode AS fnum [LEN=random-record-length]
+;   OPEN mode,fnum,filespec[,random-record-length]
+; 
+OPEN:
+	CALL FRMEVL		; read the file mode or filename
+	LD A, BYTE PTR 0 [BX]		; get terminator
+	CP 44		; followed by comma? (then
+;  non-spcdsk open...)
+	JP NZ, NOTNSO		; nope, must be SPCDSK form
+	PUSH HL		; save the text pointer
+	CALL FRESTR		; free string temp & check string
+	LD A, BYTE PTR 0 [BX]		; make sure its not a null string
+	OR A
+	JP Z, ERBFM0		; if so, "bad file mode"
+	INC HL
+	LD HL, WORD PTR 0 [BX]		; [BX] points at mode character
+	LD A, BYTE PTR 0 [BX]		; [A]=mode character
+	AND LOW OFFSET -1 -" "		; force to upper case
+	LD D, LOW OFFSET MD_SQO		; assume its "O"
+	CP "O"		; is it?
+	JP Z, HAVMOD		; [D] has correct mode
+	LD D, LOW OFFSET MD_SQI		; assume sequential
+	CP "I"		; is it?
+	JP Z, HAVMOD		; [D] says sequential input
+	LD D, LOW OFFSET MD_APP		; append?
+	CP "A"		; test
+	JP Z, HAVMOD		; allow it
+	LD D, LOW OFFSET MD_RND		; must be random
+	CP "R"
+	JP NZ, ERBFM0		; if not, no match so "bad file mode"
+HAVMOD:
+	LD (FILMOD), D		; set file mode
+	POP HL		; get back the text pointer
+	CALL SYNCHR
+	DB 44D
+; skip comma before file number
+HAVMD1:
+	CALL POFNUM		; [AL]=the file number
+	PUSH AF		; save file number
+	CALL SYNCHR
+	DB 44D
+; skip comma before name
+	CALL NAMSCN		; parse filename setting FILDEV, FILNM, FILEXT
+	CALL PORLEN		; parse reclen parm
+	JR OPEN1		; branch to common code (with Fnum on stack)
+ERBFM0:
+	JP DERBFM		; bad file mode error
+NOTNSO:
+	CALL NAMSC1		; parse filename setting FILDEV, FILNM, FILEXT
+	LD D, LOW OFFSET MD_RND		; Assume there is no FOR, in which
+; case the default mode is random.
+	LD A, BYTE PTR 0 [BX]
+	CP $FOR		; Is there a 'FOR'?
+	JP NZ, GOTMOD		; No, better see 'AS'
+	CALL CHRGTR
+	CP $INPUT		; Input mode?
+	LD D, LOW OFFSET MD_SQI		; Assume it is
+	JP Z, GOTMD1		; Yes, have file mode
+	CP "A"		; test
+	JP NZ, NTAPP		; branch if not append (might be OUTPUT)
+	CALL SYNCHR
+	DB "A"
+	CALL SYNCHR
+	DB "P"
+	CALL SYNCHR
+	DB "P"
+	CALL SYNCHR
+	DB "E"
+	CALL SYNCHR
+	DB "N"
+	CALL SYNCHR
+	DB "D"
+	LD D, LOW OFFSET MD_APP		; append file mode
+	JR GOTMOD		; allow it
+NTAPP:
+	CALL SYNCHR
+	DB "O"
+; it must be OUTPUT
+	CALL SYNCHR
+	DB "U"
+	CALL SYNCHR
+	DB "T"
+	CALL SYNCHR
+	DB "P"
+	CALL SYNCHR
+	DB "U"
+	CALL SYNCHR
+	DB "T"
+	LD D, LOW OFFSET MD_SQO
+	JR GOTMOD
+GOTMD1:
+	CALL CHRGTR
+GOTMOD:
+	LD (FILMOD), D		; set file mode
+	CALL SYNCHR
+	DB "A"
+	CALL SYNCHR
+	DB "S"
+; Must have 'AS'
+	CALL POFNUM		; [AL]=file #
+	PUSH AF		; save file#
+	CALL PNRLEN		; parse new reclen parameter
+OPEN1:
+	DEC HL
+	CALL CHRGTR
+	JP NZ, SNERR1		; error if not end-of-statement
+	POP AF		; [AL]=file number
+	CALL OPNFIL		; branch to general file-open code
+	JP FINPRT		; reset PTRFIL to 0 (keyboard/crt)
+; PORLEN - parse old variable record length field
+;  Entry - [FILMOD]=file mode
+;  Exit  - [CX]=reclen if reclen parm included, else 0
+; 
+PORLEN:
+	CALL PRLENC
+	JP Z, PRLENX
+	CALL SYNCHR
+	DB 44D
+	JR VARECS
+; PNRLEN - parse new variable record length field
+;  Entry - [FILMOD]=file mode
+;  Exit  - [CX]=reclen if reclen parm included, else 0
+; 
+PNRLEN:
+	CALL PRLENC
+	JP Z, PRLENX
+	CALL SYNCHR
+	DB 255D
+; else parse "LEN=record-length"
+	CALL SYNCHR
+	DB $LEN
+; LEN is a 2-byte token
+	CALL SYNCHR
+	DB EQULTK
+	EXTERN INTID2:NEAR
+VARECS:
+	CALL INTID2		; [DX]=record size (0..32767)
+	PUSH BC
+	POP DE
+			; return it in CX
+	OR A
+	JP Z, FCERR1		; 0 is illegal value
+PRLENX:
+	RET
+; PRLENC - see if reclen parm is expected
+; 
+PRLENC:
+	LD BC, 0		; indicates reclen parm not included
+	LD A, (FILMOD)		; [AL]=requested file mode
+	CP MD_RND
+	JP NZ, NOLEN		; branch if file mode is not RANDOM
+	DEC HL		; decrement text pointer
+	CALL CHRGTR		; re-get last character parsed
+	JP Z, NOLEN		; branch if end-of-statement
+	LD C, LOW 1		; indicates reclen parm included
+NOLEN:
+	OR A		; set NZ if reclen parm included
+	RET
+FCERR1:
+	JP FCERR		; function call error
+SNERR1:
+	JP SNERR		; syntax error
+
+;;; CLOSE ;;;
+
+
+;;; WIDTH Statements ;;;
+
+	PUBLIC CLOSE
+;  CLOSE Statement
+;   Syntax: CLOSE [[#]n [,[#]n ...]]
+; 
+CLOSE:
+	JP NZ, CLOS1		; branch if statement has parm
+	JP CLSALL		; close all files if no parm given
+CLOS1:
+	CP "#"
+	JP NZ, NOLBS		; branch if no #
+	CALL CHRGTR		; skip #
+NOLBS:
+	CALL GETBYT		; [AL]=file#
+	CALL CLSFIL		; close file [AL] and return
+	DEC HL
+	CALL CHRGTR
+	CP 44		; check for comma
+	JP NZ, RET6		; branch if end of file list
+	CALL CHRGTR		; skip comma
+	JR CLOS1		; close next file in list
+	PUBLIC WIDTHS
+;  WIDTH Y[,X]/[#fnum,]/[device,]   Statement
+;  Entry - (BX) = text pointer
+; 
+WIDTHS:
+	CP "#"
+	JP Z, FILWID		; Is files WIDTH specification
+	CP 44
+	JP Z, CRTWD1		; branch if Comma
+	EXTERN $LPRINT:NEAR
+	EXTERN $_LPT1:NEAR
+	CP $LPRINT
+	JP NZ, NOTLPR		; branch if not WIDTH LPRINT
+	CALL CHRGTR		; skip LPRINT
+	LD A, LOW OFFSET $_LPT1
+	JR ITSWLP
+NOTLPR:
+	PUSH HL		; save Text Pointer in case CRT width
+	CALL FRMEVL		; evaluate string or number
+	CALL GETYPR
+	JP NZ, CRTWD		; brif not string argument. CRT width
+	POP IY		; discard old text pointer
+	PUSH HL		; save text pointer
+	CALL FRESTR		; release temporary string descriptor
+; [BX] points to string descriptor
+	LD C, BYTE PTR 0 [BX]
+	LD B, LOW 0		; [CX]=length of string
+	LD IYH, W
+	LD IYL, O		; SI points to start of string
+	CALL PARDEV		; AL=-(device number)
+	POP HL		; restore text pointer
+	PUSH AF		; save device id
+	CALL SYNCHR
+	DB 44D
+	POP AF		; [AL]=device id
+ITSWLP:
+	PUSH AF		; save device id
+	CALL GETWDT		; [DL]=width
+	POP AF		; [AL]=device id
+	CALL CDEVID		; [DI]=device dispatch table offset
+	JP Z, ERIFN0		; illegal file name if device=disk
+	LD AH, LOW OFFSET G_SWD		; select set-width function
+	JP TBLDSP		; dispatch function [AH] for device [DI]
+FILWID:
+	CALL PRFNUM		; [AL]=file number
+	CALL FDBPTR		; [SI] points to file-data-block
+	JP Z, ERFNO1		; branch if file not opened
+	PUSH IY
+	CALL SYNCHR
+	DB 44D
+	CALL GETWDT		; [AL]=width (1..255)
+	POP IY		; SI points to file data block
+	LD (F_WID[SI]), A		; save width in FDB
+RET6:
+	RET
+GETWDT:
+	CALL GETBYT
+	OR A
+	JP Z, FCERR2		; width of 0 is illegal
+	RET		; return if width is between 1 and 255
+CRTWD:
+	POP HL		; restore text pointer
+CRTWD1:
+	JP GWWID
+FCERR2:
+	JP FCERR
+ERIFN0:
+	JP DERIFN		; illegal file name error
+ERFNO1:
+	JP DERFNO		; file not open error
+ERDNA1:
+	JP DERDNA		; Device not available
+
+;;; BSAVE ;;;
+
+
+;;; BLOAD Statements ;;;
+
+	PUBLIC BLOAD
+	PUBLIC BSAVE
+	EXTERN GETBYT:NEAR
+	EXTERN SYNCHR:NEAR
+	EXTERN MAKINT:NEAR
+	EXTERN CHRGTR:NEAR
+	EXTERN SNERR:NEAR
+	EXTERN PRODIR:NEAR
+; CSEG DATASG (public)
+	EXTERN SAVLEN:WORD
+	EXTERN SAVSEG:WORD
+;  BSAVE Statement - Save memory image to file
+;  Syntax: BSAVE name, start-adr, byte-count
+; 
+BSAVE:
+	CALL BPARMS		; parse parms
+	INC A
+	JP NZ, SNERR2		; Error if 1 or no parms.
+	PUSH HL		; save text pointer
+	PUSH BC		; SAVE start-adr
+	LD A, LOW OFFSET MD_SQO		; open file 0 for output
+	CALL NULOPM
+	CALL SCDBIN		; set file-code to binary
+	LD A, LOW OFFSET BSVFID		; output binary file ID
+	CALL OUTDO		; output to file
+	LD AX, (WORDPTRSAVSEG)		; DX=Segment from DEF SEG statement
+	CALL OUT16		; write segment adr to file
+	POP AF		; [AX]=start-adr
+	PUSH AF
+	CALL OUT16		; output start adr
+	LD AX, (WORDPTRSAVLEN)		; [DX]=number of bytes
+	PUSH BC
+	POP AX
+			; [CX]=length
+	CALL OUT16		; output end adr + 1
+	POP HL		; [BX]=start-adr
+	LD DE, (WORDPTRSAVSEG)		; DX=Segment adr
+	CALL OUTBLK		; output binary
+	JP LODEND		; exit
+SNERR2:
+	JP SNERR
+;  BLOAD Statement - load memory image from disk
+;  Syntax: BLOAD name[, start-adr]
+; 
+BLOAD:
+	CALL BPARMS		; Get Parms if any.
+	OR A
+	JP Z, BLODP		; Will set -1 if start-adr only given.
+	INC A
+	JP Z, SNERR2		; error if 2 parms given
+BLODP:
+	DEC A		; AL=1: no start-adr parm, -1: start-adr parm
+	PUSH HL		; save text pointer
+	PUSH AF		; save Parm Switch
+	PUSH BC		; save start-adr parm
+	LD A, LOW OFFSET MD_SQI
+	CALL NULOPM		; Open File 0 for INPUT
+	CALL SCDBIN		; set file code to binary
+	CALL INCHR		; [A]=1st byte from file
+	CP BSVFID		; make sure this was created by BSAVE
+	JP NZ, ERBFM2		; else BAD FILE MODE
+	POP BC		; [CX]=start-adr parm
+	CALL INP16		; [AX]=next 16 bits from file
+	PUSH DE
+	POP AX
+			; [DX]=default segment
+	CALL INP16		; [AX]=next 16 bits from file
+	PUSH HL
+	POP AX
+			; [BX]=default start-adr
+	POP AF		; AL=1: no start-adr parm, -1: start-adr parm
+	DEC A
+	JP Z, DEFSAD		; branch if no start-adr parm given
+	LD DE, (WORDPTRSAVSEG)		; [DX]=segment parm
+	PUSH HL
+	POP BC
+			; [BX]=start-adr parm
+DEFSAD:
+	CALL INP16		; [AX]=file length
+	PUSH BC
+	POP AX
+			; [CX]=file length
+	CALL INPBLK		; do the load
+LODEND:
+	POP HL		; restore text pointer
+	JP FINPRT		; close file 0, reset PTRFIL
+ERBFM2:
+	JP DERBFM		; bad file mode error
+; BPARMS - Parse parms for BLOAD and BSAVE
+;  Exit  - [AL]=(1,0,-1) if 0,1,2 parameters parsed.
+;          [BX] is preserved (text pointer)
+;          [CX] = start-adr
+;          [SAVLEN] = file size (if BSAVE)
+; 
+BPARMS:
+	CALL PRODIR		; Don't allow in direct mode if protected
+	CALL NAMSCN		; scan file name and disk number
+; setting FILDEV, FILNM, FILEXT
+	JP C, BNAMOK		; Extension supplied by user
+	CALL NAMBAS		; Supply ".BAS" default extension
+BNAMOK:
+	DEC HL
+	CALL CHRGTR		; See if any parms
+	JP NZ, BPARM2		; Brif parms follow
+	LD A, LOW 1		; No Parms, use file header if BLOAD.
+	RET		;  else exit.
+BPARM2:
+	CALL SYNCHR
+	DB "
+	DB "
+; Must see comma first
+	CALL ADRGET		; get start-adr (0..65535)
+	PUSH DE		; save it
+	DEC HL
+	CALL CHRGTR
+	JP NZ, BPARM3		; Brif 2nd Parm given.
+	POP BC		; [CX]=start adr
+	XOR A		; Set 0 if 1 parm only given.
+	RET
+BPARM3:
+	CALL SYNCHR
+	DB "
+	DB "
+	CALL ADRGET		; [DX]=number of bytes for bsave (0..65535)
+	EX DE, HL
+	LD (WORDPTRSAVLEN), HL		; Save end ADDRESS+1(start+count)
+	EX DE, HL		; [BX]=text pointer
+	DEC HL
+	CALL CHRGTR
+	JP NZ, SNERR3		; must be end of statement
+	POP BC		; [CX]=start-adr
+	LD A, LOW 255		; Set -1 if 2 parms given.
+	RET
+SNERR3:
+	JP SNERR
+
+;;; LPRINT ;;;
+
+
+;;; PRINT Statements ;;;
+
+	PUBLIC LPRINT
+	PUBLIC PRINT
+	EXTERN PRINUS:NEAR
+	EXTERN IMOD:NEAR
+	EXTERN FOUT:NEAR
+	EXTERN STRLIT:NEAR
+	EXTERN STRPRT:NEAR
+	EXTERN USINTK:NEAR
+	EXTERN TABTK:NEAR
+	EXTERN SPCTK:NEAR
+; CSEG DATASG (public)
+	EXTERN FACLO:WORD
+JPRINU:
+	JP PRINUS		; Print Using
+PRINTX:
+	CALL CRDO		; output terminating CR
+PRNTX1:
+	POP BC		; discard line width, last comma column
+	JP FINPRT		; close file#0, reset PTRFIL to keyboard
+LPRINT:
+	LD (WORDPTRPTRFIL), -1		; future output will go to Line Printer
+	JR PRINT1
+PRINT:
+	LD C, LOW OFFSET MD_SQO		; setup output file
+	CALL FILGET
+PRINT1:
+	CALL PTRWDC		; [CH]=width, [CL]=last comma column
+	PUSH BC		; save on stack
+NEWCHR:
+	DEC HL
+	CALL CHRGTR		; get another character
+	JP Z, PRINTX		; print CR if end without punctuation
+PRINTC:
+	JP Z, PRNTX1		; branch if end of statement
+	POP BC		; refresh [CH]=width, [CL]=last comma column
+	CP USINTK		; is it "print using" ?
+	JP Z, JPRINU		; IF SO, USE A SPECIAL HANDLER
+	PUSH BC		; save [CH]=width, [CL]=last comma column
+	CP TABTK
+	JP Z, TABERJ		; the TAB function?
+	CP SPCTK
+	JP Z, TABERJ		; the SPC function?
+	PUSH HL		; save the text pointer
+	CP 44
+	JP Z, COMPRT		; Print Comma
+	CP 59		; is it a ";"
+	JP NZ, PRTS
+	JP NOTABR
+TABERJ:
+	JP TABER
+PRTS:
+	POP DE		; get rid of old text pointer
+	CALL FRMEVL		; evaluate the formula
+	PUSH HL		; save text pointer
+	CALL GETYPR		; see if we have a string
+	JP Z, STRDON		; if so, print special
+	DEC HL
+	CALL CHRGTR		; [BX]=addr of number terminator(non-blank)
+	PUSH BC
+	LD B, A
+	LD A, 44D
+	CP (HL)
+	LD A, B
+	POP BC
+	PUSH AF		; remember if value was comma terminated
+	CALL FOUT		; make a number into a string
+	CALL STRLIT		; make it a string
+	LD BYTE PTR 0 [BX], LOW " "		; put a space at the end
+	POP AF
+	POP HL
+	POP BC		; restore [CH]=width, [CL]=last comma column
+	PUSH BC
+	PUSH HL
+	LD HL, (WORDPTRFACLO)		; [BX]=address of string descriptor
+	JP NZ, INCLEN		; BRIF not comma terminated(print the space too)
+	CALL PTRGPS		; [AL]=file's current position
+	ADD A, (HL)		; add length of string we will output
+; At this point we have [AL]=posn after number is printed(without space),
+;   [CH]=device width, [CL]=last comma posn, [BX]=addr of string descriptor.
+; IF number output stops at comma column minus one
+; THEN don't append blank(This insures that another number will appear at the
+; next comma column, instead of the second column posn after this string)
+	PUSH BC
+	PUSH HL
+	LD H, A
+	LD A, B
+	CP 255D
+	LD A, H
+	POP HL
+	POP BC		; infinite width?
+	JP Z, MODCOM		; do modulus to determine next comma column
+	CP C		; compare with last comma column
+	JP NC, INCLEN		; Will do CR after do output,
+;  make string include blank
+; Determine if posn in [AL] is one less than a comma column
+MODCOM:
+	INC A
+MODCM1:
+	SUB OFFSET CLMWID		; [AL]=modulus CLMWID
+	JR NC, $+2
+	JP Z MODCM1
+	JP Z, STRDON		; BRIF at comma column, exclude trailing space
+INCLEN:
+	PUSH IY
+	PUSH BC
+	LD IY, HL
+	LD B, (IY+0)
+	LD C, (IY+1)
+	INC BC
+	LD (IY+0), B
+	LD (IY+1), C
+	POP BC
+	POP IY		; increment the length to include the space
+; NOTE:number is less than 255(can do INC)
+STRDON:
+	POP HL
+	POP BC
+	PUSH BC		; refresh [CH]=width, [CL]=last comma column
+	PUSH HL
+	LD HL, (WORDPTRFACLO)		; BX points to string descriptor
+	INC B
+	JP Z, LINCH2		; branch if infinite (255) line width
+	DEC B		; restore [CH]=device width
+	CALL PTRGPS		; [AL]=file's current column pos
+	OR A		; don't CR if string longer than line
+	JP Z, LINCH2		;   length if position is 0
+	ADD A, (HL)		; [AL]=column + string size
+	CCF		; set nc if overflow on check
+	JP NC, LINCHK		; start on a new line if overflow
+	DEC A
+	CP B		; check for overlap
+LINCHK:
+	JP C, LINCH2		; branch if still on current line
+	CALL CRDO		; else output CR
+LINCH2:
+	CALL STRPRT		; PRINT THE string/number
+	POP HL		; restore text pointer
+	JP NEWCHR		; print some more
+; PRINT comma (text pointer stacked)
+; 
+COMPRT:
+	CALL PTRGPS		; [AL]=file's current column position
+	PUSH BC
+	PUSH HL
+	LD H, A
+	LD A, B
+	CP 255D
+	LD A, H
+	POP HL
+	POP BC		; infinite width?
+	JP Z, MORCOM		; do modulus
+	CP C		; compare current with last comma column
+CHKCOM:
+	JP C, MORCOM		; branch if not beyond last comma col
+	CALL CRDO		; start new line
+	JR NOTABR		; AND QUIT IF BEYOND LAST COMMA FIELD
+MORCOM:
+	SUB OFFSET CLMWID		; [AL]=MODULUS CLMWID
+	JP NC, MORCOM
+	NEG
+	DEC A		; fill the print position out
+; to an even CLMWID, so
+; we print CLMWID-[AL] MOD CLMWID spaces
+	JR ASPA2		; go print [AL]+1 spaces
+; PRINT TAB(N) & SPC(N)
+; 
+TABER:
+	PUSH AF		; remember IF [A]=SPCTK or TABTK
+	CALL CHRGTR
+	CALL ADRGET		; [DX]=parameter (0..65535)
+	POP AF		; see if its SPC or TAB
+	PUSH AF
+	OR A
+	JR NZ, $+2
+	JP PE, TBNONG		; branch if greater than 0
+	LD DE, 0		; map negative parms to 0
+	JR SPCNDC
+TBNONG:
+	CP SPCTK		; if space leave alone
+	JP Z, SPCNDC
+	DEC DE		; offset TAB by 1
+SPCNDC:
+	PUSH HL		; save the text pointer
+	LD L, B		; [BL]=file width
+	LD A, B		; [AL]=file width
+	INC A		; test for width of 255 (no folding)
+	JP Z, LNOMOD		; if so, don't mod
+	LD H, LOW 0		; MOD out by line length
+	CALL IMOD		; [BX]=[DX] MOD filewidth
+	EX DE, HL		; set [DL] = position to go to
+LNOMOD:
+	POP HL		; get back the text pointer
+	CALL SYNCHR
+	DB ")"
+	DEC HL
+	POP AF		; get back SPCTK or TABTK
+	SUB OFFSET SPCTK		; was it SPCTK?
+	PUSH HL		; save the text pointer
+	JP Z, DOSIZT		; value in [AL]
+	CALL PTRGPS		; [AL]=file position
+DOSIZT:
+	NEG		; print [E]-[A] spaces
+	DEC A
+	ADD A, E
+	JP C, ASPA2		; print if past current
+	INC A
+	JP Z, NOTABR		; do nothing if at current
+	CALL CRDO		; go to a new line
+	LD A, E		; get the position to go to
+	DEC A
+	JP M, NOTABR
+ASPA2:
+	INC A
+ASPAC:
+	LD E, A		; [B]=number of spaces to print
+	LD A, LOW " "		; [A]=space
+REPOUT:
+	CALL OUTDO		; PRINT [AL]
+	DEC E		; decrement the count
+	JP NZ, REPOUT
+NOTABR:
+	POP HL		; pick up text pointer
+	CALL CHRGTR		; and the next character
+	JP PRINTC		; and since we just printed
+; spaces, don't call crdo
+; if it's the end of the line
+
+;;; EOF ;;;
+
+
+;;; LOC ;;;
+
+
+;;; LOF  Functions ;;;
+
+	PUBLIC EOF
+	PUBLIC LOC
+	PUBLIC LOF
+	EXTERN CONINT:NEAR
+;  EOF(n) Function - returns -1 if eof, else 0
+;  Entry - [FAC] = file number
+;  Exit  - [FAC] = -1 if EOF, else 0.
+; 
+EOF:
+	CALL FACFPT		; [SI] points to FDB for file [FAC]
+	JP Z, ERFNO4		; error if file not opened
+	LD HL, 0		; BX=0 (assume not at eof)
+	; TEST {'type': 'instruction', 'op': 'TEST', 'operands': (('BYTE', 'PTR', 'F_FLGS[SI]'), ('LOW', 'OFFSET', 'FL_BKC')), 'comment': None, 'id': 650}
+	JP NZ, GFUNX		; if character backed up, no eof
+	DEC HL		; [BX]=-1 (EOF true)
+	PUSH BC
+	LD B, A
+	LD A, 0D
+	CP (IY+F_ORCT)
+	POP BC
+	JP Z, GFUNX		; branch if FDB EOF flag set
+	LD AH, LOW OFFSET G_EOF		; End of file function
+	CALL SIDSP
+	JR GFUNX		; return result in FAC
+ERFNO4:
+	JP DERFNO		; file not open error
+;  LOC(n) Function
+;  Entry - [FAC] = file number
+;  Exit  - [FAC] = current record number
+; 
+LOC:
+	LD AH, LOW OFFSET G_LOC		; LOC function
+GENFUN:
+	CALL FACDSP		; [BX]=EOF(file [FAC])
+GFUNX:
+	JP MAKINT		; return result in FAC
+;  LOF(n) Function
+;  Entry - [FAC] = file number
+;  Exit  - [FAC] = length of file in bytes
+; 
+LOF:
+	LD AH, LOW OFFSET G_LOF		; LOF Function
+	JP FACDSP		; [FAC]=LOF(file [FAC])
+
+;;; GET/PUT - Random disk I/O Statements ;;;
+
+	PUBLIC DPUTG
+; Syntax - GET fn [,recnum]   (if no recnum next relative record assumed)
+;          PUT fn [,recnum]
+;  Entry - [BX] = text pointer
+;          [CX] = 0 for GET, 1 for PUT
+; 
+DPUTG:
+	PUSH BC		; save GET/PUT Flag
+	CALL POFNUM		; [AL]=file number
+	CALL FDBPTR		; [SI] points to File Data Block of file [AL]
+	JP Z, ERFNO3		; branch if file not open
+Exception: Don't know how to generate CMP {'type': 'instruction', 'op': 'CMP', 'operands': (('BYTE', 'PTR', 'F_MODE[SI]'), ('LOW', 'OFFSET', 'MD_RND')), 'comment': None, 'id': 689}
+Traceback (most recent call last):
+  File "/Users/mac/Library/Python/3.9/lib/python/site-packages/z80conv-0.0.1-py3.9.egg/z80conv/conv.py", line 20, in main
+    for line in writer.lines():
+  File "/Users/mac/Library/Python/3.9/lib/python/site-packages/z80conv-0.0.1-py3.9.egg/z80conv/writer.py", line 27, in lines
+    line = getattr(self, generator)(token)
+  File "/Users/mac/Library/Python/3.9/lib/python/site-packages/z80conv-0.0.1-py3.9.egg/z80conv/writer.py", line 801, in _gen_instruction
+    instr = getattr(self, '_gen_instruction_' + op.lower())(token)
+  File "/Users/mac/Library/Python/3.9/lib/python/site-packages/z80conv-0.0.1-py3.9.egg/z80conv/writer.py", line 189, in _gen_instruction_cmp
+    raise SyntaxError("Don't know how to generate CMP %s" % str(token))
+SyntaxError: Don't know how to generate CMP {'type': 'instruction', 'op': 'CMP', 'operands': (('BYTE', 'PTR', 'F_MODE[SI]'), ('LOW', 'OFFSET', 'MD_RND')), 'comment': None, 'id': 689}

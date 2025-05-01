@@ -1,0 +1,71 @@
+;  [ This translation created 10-Feb-83 by Version 4.3 ]
+	.radix 8
+;  To be safe
+; CSEG CODESG (public)
+; Assuming segment CS:CSEG
+	include OEM.H
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; CALL86  8086 CALL Statement ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+	.radix 8
+	EXTERN VMOVFM:NEAR
+	EXTERN FRQINT:NEAR
+	EXTERN PTRGET:NEAR
+	EXTERN GETSTK:NEAR
+	EXTERN CHRGTR:NEAR
+	EXTERN SYNCHR:NEAR
+	EXTERN CHRGT2:NEAR
+	EXTERN FCERR:NEAR
+; CSEG DATASG (public)
+; Assuming segment DS:DSEG
+	EXTERN SUBFLG:WORD
+	EXTERN SARYFL:WORD
+	EXTERN TEMP:WORD
+	EXTERN TEMPA:WORD
+	EXTERN SAVSEG:WORD
+	EXTERN ARYTAB:WORD
+;  This is the CALL <simple var>[(<simple var>[,<simple var>]..)]
+;  Stragegy:
+; 
+;  1.) Make sure suboutine name is simple var, get value & save it
+; 
+;  2.) Evaluate params & stuff pointers on stack
+; 
+;  3.) CALL suboutine with return address on stack
+; 
+;  The CALLS statement is the same as CALL, except for each parameter
+;  it pushes Segment and Offset, not just Offset.
+	PUBLIC CALLS
+	PUBLIC CALLSL
+CALLSL:
+	SCF
+	CCF		; Clear-carry, (PUSH Segment adr of parms)
+	JR CALLS1
+CALLS:
+	SCF		; Set-carry, (don't PUSH Segment adr of parms)
+CALLS1:
+	PUSH AF
+	EXTERN PRODIR:NEAR
+; Don't allow CALL as direct statement in
+	CALL PRODIR		; protected environment
+	LD (SUBFLG), LOW 128		; say we want to scan only a simple
+	CALL PTRGET		; scan var and search symbol table
+	LD (SARYFL), LOW 0		; clear Scanned-Array-Element-Flag
+	PUSH HL		; save text pointer
+	PUSH HL
+	POP DE
+			; get pointer to var in BX
+	CALL VMOVFM		; load variable into FAC
+	CALL FRQINT		; make it an integer
+	LD (WORDPTRTEMPA), HL		; save text pointer
+	LD C, LOW 32		; get max # of parameters
+	CALL GETSTK		; see if there is that much stack space
+	POP HL		; get back text pointer
+	CALL CHRGT2		; eat character after var name
+	JP Z, CALLST		; end of statement, no parameter list
+	CALL SYNCHR		; check for open paren
+	DB 40D
+;  (
+GETPAR:

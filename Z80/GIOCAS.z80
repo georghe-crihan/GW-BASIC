@@ -1,0 +1,26 @@
+;  [ This translation created 10-Feb-83 by Version 4.3 ]
+	.radix 8
+;  To be safe
+; CSEG CODESG (public)
+; Assuming segment CS:CSEG
+	include OEM.H
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; GIOCAS - Cassette Machine Independent Device Driver Code ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; 
+; 
+; --------- --- ---- -- ---------
+; COPYRIGHT (C) 1981 BY MICROSOFT
+; --------- --- ---- -- ---------
+; 
+; Written by:     Len Oorthuys
+; 
+;         
+	include GIO86U
+	include MSDOSU
+	EXTERN DERDNA:NEAR
+	PUBLIC MOTOR
+MOTOR:
+	JP DERDNA		; Device unavailable error

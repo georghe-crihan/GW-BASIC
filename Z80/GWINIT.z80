@@ -1,0 +1,23 @@
+Exception: Unknown arguments to INS86 macro: 8cc9    (140, 201)
+Traceback (most recent call last):
+  File "/Users/mac/Library/Python/3.9/lib/python/site-packages/z80conv-0.0.1-py3.9.egg/z80conv/conv.py", line 20, in main
+    for line in writer.lines():
+  File "/Users/mac/Library/Python/3.9/lib/python/site-packages/z80conv-0.0.1-py3.9.egg/z80conv/writer.py", line 22, in lines
+    for token in self.transformer.transform():
+  File "/Users/mac/Library/Python/3.9/lib/python/site-packages/z80conv-0.0.1-py3.9.egg/z80conv/transformer.py", line 229, in transform
+    trans_dict = self._calculate_transform_dict(left)
+  File "/Users/mac/Library/Python/3.9/lib/python/site-packages/z80conv-0.0.1-py3.9.egg/z80conv/transformer.py", line 138, in _calculate_transform_dict
+    tokens = list(token for token in tokens if token['type'] in {'label', 'instruction'})
+  File "/Users/mac/Library/Python/3.9/lib/python/site-packages/z80conv-0.0.1-py3.9.egg/z80conv/transformer.py", line 138, in <genexpr>
+    tokens = list(token for token in tokens if token['type'] in {'label', 'instruction'})
+  File "/Users/mac/Library/Python/3.9/lib/python/site-packages/z80conv-0.0.1-py3.9.egg/z80conv/transformer.py", line 224, in annotate_with_id
+    for id, token in enumerate(self.parser.parse()):
+  File "/Users/mac/Library/Python/3.9/lib/python/site-packages/z80conv-0.0.1-py3.9.egg/z80conv/parser.py", line 30, in parse
+    self.state = self.state()
+  File "/Users/mac/Library/Python/3.9/lib/python/site-packages/z80conv-0.0.1-py3.9.egg/z80conv/parser.py", line 898, in _parse_asm
+    return self._parse_macro_call(token)
+  File "/Users/mac/Library/Python/3.9/lib/python/site-packages/z80conv-0.0.1-py3.9.egg/z80conv/parser.py", line 621, in _parse_macro_call
+    return self._parse_macro_ins86(operands, comment)
+  File "/Users/mac/Library/Python/3.9/lib/python/site-packages/z80conv-0.0.1-py3.9.egg/z80conv/parser.py", line 586, in _parse_macro_ins86
+    raise SyntaxError("Unknown arguments to INS86 macro: %s    %s" % (''.join(debug), operands))
+SyntaxError: Unknown arguments to INS86 macro: 8cc9    (140, 201)

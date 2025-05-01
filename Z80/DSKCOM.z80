@@ -1,0 +1,904 @@
+;  [ This translation created 10-Feb-83 by Version 4.3 ]
+	.radix 8
+;  To be safe
+; CSEG CODESG (public)
+; Assuming segment CS:CSEG
+	include OEM.H
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; DSKCOM - - COMMON ROUTINES FOR DISK BASICS ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+	ALPCPM=0
+	MELCO=0
+	MODEL3=0
+; CSEG DATASG (public)
+;  Data Segment
+; Assuming segment DS:DSEG
+	EXTERN CURLIN:WORD
+	EXTERN DSCTMP:WORD
+	EXTERN PTRFIL:WORD
+	EXTERN FRETOP:WORD
+	EXTERN SAVSTK:WORD
+	EXTERN TXTTAB:WORD
+	EXTERN VALTYP:WORD
+	EXTERN VARTAB:WORD
+	EXTERN BUF:WORD
+	EXTERN DIRTMP:WORD
+; End of data segment externals
+;  Code Segment ( terminated by END at bottom of file )
+	EXTERN CLSFIL:NEAR
+	EXTERN CONINT:NEAR
+	EXTERN DERBFN:NEAR
+	EXTERN DERRPE:NEAR
+	EXTERN ERROR:NEAR
+	EXTERN FILOU3:NEAR
+	EXTERN CHRGTR:NEAR
+	EXTERN INDSKC:NEAR
+	EXTERN PRGFIL:NEAR
+	EXTERN SCRTCH:NEAR
+	EXTERN SNERR:NEAR
+	EXTERN STRLT3:NEAR
+	EXTERN DERFOV:NEAR
+	EXTERN DERBFM:NEAR
+	EXTERN DOCNVF:NEAR
+	EXTERN FCERR:NEAR
+	EXTERN FINBCK:NEAR
+	EXTERN FINPRT:NEAR
+	EXTERN FRCSTR:NEAR
+	EXTERN FRESTR:NEAR
+	EXTERN FRMEVL:NEAR
+	EXTERN GETBYT:NEAR
+	EXTERN GETSPA:NEAR
+	EXTERN GTBYTC:NEAR
+	EXTERN GTMPRT:NEAR
+	EXTERN INCHRI:NEAR
+	EXTERN LINKER:NEAR
+	EXTERN LIST:NEAR
+	EXTERN MAIN:NEAR
+	EXTERN NEWSTT:NEAR
+	EXTERN OMERR:NEAR
+	EXTERN PTRGET:NEAR
+	EXTERN PUTNEW:NEAR
+	EXTERN READY:NEAR
+	EXTERN RUNC:NEAR
+	EXTERN VMOVFM:NEAR
+	EXTERN VMOVMF:NEAR
+	EXTERN STRINI:NEAR
+	EXTERN FRMEQL:NEAR
+	EXTERN ENDCON:NEAR
+	EXTERN GONE:NEAR
+	EXTERN DOASIG:NEAR
+	EXTERN ERRFDR:NEAR
+	EXTERN FIN:NEAR
+	EXTERN SCCPTR:NEAR
+	EXTERN GETYPR:NEAR
+	EXTERN SYNCHR:NEAR
+	EXTERN DCOMPR:NEAR
+	PUBLIC FIELD
+	PUBLIC PRGFLI
+	PUBLIC FILIND
+	PUBLIC MKI$
+	PUBLIC MKS$
+	PUBLIC MKD$
+	PUBLIC CVI
+	PUBLIC CVS
+	PUBLIC CVD
+	PUBLIC DLINE
+	PUBLIC PRGFL2
+	PUBLIC LRUN
+	PUBLIC LOAD
+	PUBLIC PRGFIN
+	PUBLIC MERGE
+	PUBLIC SAVE
+	PUBLIC OKGETM
+	PUBLIC RSET
+	PUBLIC LSET
+; CSEG DATASG (public)
+	EXTERN PROFLG:WORD
+	include GIO86U
+	CPM86=0
+	include MSDOSU
+	NMLOFS=F_BREM
+	.radix 10
+;  REVISION HISTORY
+; 4/23/78 PGA     ALLOW # ON CLOSE
+; 
+; 8/6/79  PGA     IF ^C ON MBASIC FOO, DONT RETURN TO SYSTEM. SEE 'NOTINI'
+; 6/27/80 PGA     FIX INPUT#1,D# SO IT USES FINDBL INSTEAD OF FIN
+; 				AND THUS AVOIDS LOSING SIGNIFICANCE.
+; 
+; 
+
+;;; FILINP AND FILGET -- SCAN A FILE NUMBER AND SETUP PTRFIL ;;;
+
+	EXTERN FILINP:NEAR
+	EXTERN FILSCN:NEAR
+	EXTERN FILSET:NEAR
+
+;;; FILSCN ;;;
+
+
+;;; FILFRM ;;;
+
+
+;;; AND FILIDX ;;;
+
+
+;;; Conversion Routines ;;;
+
+MKI$:
+	LD A, LOW 2		; VALUE TYPE FOR INTEGER AND NUMBER
+; OF CHARACTERS RESULT WILL NEED
+	DB 185D
+;  SKIP	;SKIP NEXT TWO BYTES WITH "LXI  B,"
+MKS$:
+	LD A, LOW 4		; VALUE TYPE OF SINGLE PRECISION
+	DB 185D
+;  SKIP	;SKIP NEXT TWO BYTES
+MKD$:
+	LD A, LOW 8		; VALUE TYPE OF DOUBLE-PRECISION
+	PUSH AF		; SAVE THE NUMBER OF BYTES OF
+; STRING SPACE WE NEED
+	CALL DOCNVF		; CONVERT FAC TO PROPER TYPE
+	POP AF		; GET THE NUMBER OF BYTES NEEDED
+	CALL STRINI		; GET A PLACE FOR THE STRING DATA
+; CSEG DATASG (public)
+	EXTERN DSCPTR:WORD
+	LD HL, (DSCPTR)		; POINT TO THE PLACE TO STORE THE DATA
+	CALL VMOVMF		; MOVE THE FAC VALUE INTO THE STRING CREATION
+	JP FINBCK
+CVI:
+	LD A, LOW 1		; SET [A] TO BE VALTYP-1
+	DB 185D
+;  SKIP	;SKIP THE NEXT TWO BYTES WITH "LXI B,"
+CVS:
+	LD A, LOW 3		; ALSO SET [A] TO NUMBER OF CHARACTERS REQUIRED -1
+	DB 185D
+;  SKIP	;SKIP THE NEXT TWO BYTES
+CVD:
+	LD A, LOW 7		; DOUBLE PRECISION VALUE TYPE -1
+	PUSH AF		; SAVE THE VALTYP
+	CALL FRESTR		; MAKE SURE THE ARGUMENT IS A STRING
+; AND GET A POINTER TO THE DESCRIPTOR
+	POP AF		; GET BACK NUMBER OF CHARACTERS REQUIRED-1
+	CP (HL)		; MAKE SURE THE STRING IS LONGER THAN THAT
+	JP NC, FCERR
+; IF NOT, "ILLEGAL FUNCTION CALL"
+	INC A		; [A]=TRUE VALUE TYPE
+	LD (VALTYP), A		; SETUP VALUE TYPE FOR MOVE
+	INC HL
+	LD HL, (HL)		; [H,L]=POINTER AT STRING DATA
+; AND FOR IDENTIFICATION
+	JP VMOVFM
+
+;;; Read Items From A Sequential File ;;;
+
+FILIND:
+	CALL GETYPR		; SEE IF INPUT IS STRING OR NUMBER
+	LD BC, OFFSET DOASIG		; RETURN ADDRESS TO SETUP [FAC]
+	CON1=0+(44*256)+32
+	LD DE, OFFSET CON1		; SETUP TERMINATORS SPACE AND COMMA
+	JR NZ, INPDOR		; IF NUMERIC, GO READ THE FILE
+	LD E, D		; MAKE BOTH TERMINATORS COMMA
+	JR INPDOR		; GO READ THE FILE
+; 
+;  Entry for line input and read code for item fetching from
+;  sequential input files
+; 
+DLINE:
+	CALL FILINP		; GET FILE NUMBER SET UP
+	CALL PTRGET		; READ STRING TO STORE INTO
+	CALL FRCSTR		; MAKE SURE IT WAS A STRING
+	LD BC, OFFSET FINPRT		; RESET TO CONSOLE WHEN DONE READING
+	PUSH BC		; SAVE ON STACK
+	PUSH DE		; SAVE POINTER AT VARIABLE
+	EXTERN LETCON:NEAR
+	LD BC, OFFSET LETCON		; GOOD RETURN ADDRESS FOR ASSIGNMENT
+	XOR A		; SET A=0 FOR STRING VALUE TYPE
+	LD D, A		; ZERO OUT BOTH TERMINATORS
+	LD E, A
+INPDOR:
+	PUSH AF		; SAVE VALUE TYPE
+	PUSH BC		; SAVE RETURN ADDRESS
+	PUSH HL		; SAVE POINTER AT DATA COMING IN
+; A DUMMY POINTER AT BUFMIN
+NOTNWT:
+	EXTERN INCHR:NEAR
+	CALL INCHR		; Read a character from file PTRFIL
+	CP " "		; SKIP LEADING SPACES
+	JR NZ, NOTSPC		; EXCEPT FOR LINE INPUT
+	INC D		; CHECK FOR LINEINPUT
+	DEC D
+	JR NZ, NOTNWT		; SKIP ANY NUMBER
+NOTSPC:
+	CP 34		; QUOTED STRING COMING IN?
+	JR NZ, NOTQTE
+	LD A, E		; MUST BE INPUT OF A STRING
+	CP 44		; WHICH HAS [E]=44 (",")
+	LD A, LOW 34		; QUOTE BACK INTO [A]
+	JR NZ, NOTQTE
+	LD D, A		; TERMINATORS ARE QUOTES ONLY
+	LD E, A
+	CALL INDSKC		; READ PAST QUOTATION
+	JR C, QUITSI		; IF EOF, ALL DONE
+NOTQTE:
+	LD HL, (BUF)		; BUFFER FOR DATA
+	LD B, LOW 255		; MAXIMUM NUMBER OF CHARACTERS (255)
+LOPCRS:
+	LD C, A		; SAVE CHARACTER IN [C]
+	LD A, D		; CHECK FOR QUOTED STRING
+	CP 34
+	LD A, C		; RESTORE CHARACTER
+	JR Z, NOTQTL		; DON'T IGNORE CR OR STOP ON LF
+	CP 13		; CR?
+	PUSH HL		; SAVE DEST PTR. ON STACK
+	JR Z, ICASLF		; EAT LINE FEED IF ONE
+	POP HL		; RESTORE DEST. PTR.
+	CP 10		; LF?
+	JR NZ, NOTQTL		; NO, TEST OTHER TERMINATORS
+LPISLF:
+; ** 5/14/82 BUG FIX(MULTIPLE LF FOR UNQUOTED STRING)
+	LD C, A		; SAVE CURRENT CHAR
+	LD A, E		; GET TERMINATOR 2
+	CP 44		; CHECK FOR COMMA (UNQUOTED STRING)
+	LD A, C		; RESTORE CHARACTER
+	CALL NZ, STRCHR
+; IF NOT, STORE LF (?)
+	CALL INDSKC		; GET NEXT CHAR
+	JR C, QUITSI		; IF EOF, ALL DONE.
+	CP 10		; ** 5/14/82 BUG FIX(MULTIPLE LF FOR UNQUOTED STRING)
+	JR Z, LPISLF		; ** 5/14/82 BUG FIX(MULTIPLE LF FOR UNQUOTED STRING)
+	CP 13		; IS IT A CR?
+	JR NZ, NOTQTL		; IF NOT SEE IF STORE NORMALLY
+	LD A, E		; GET TERMINATOR
+	CP " "		; IS IT NUMERIC INPUT?
+	JR Z, LPCRGT		; IF SO, IGNORE CR, DONT PUT IN BUFFER
+	CP 44		; IS IT NON-QUOTED STRING (TERM=,)
+	LD A, LOW 13		; GET BACK CR.
+	JR Z, LPCRGT		; IF SO, IGNORE CR.
+NOTQTL:
+	OR A		; IS CHAR ZERO
+	JR Z, LPCRGT		; ALWAYS IGNORE, AS IT IS TERMINATOR
+; FOR STRLIT (SEE QUIT2B)
+	CP D		; TERMINATOR ONE?
+	JR Z, QUITSI		; STOP THEN
+	CP E		; TERMINATOR TWO?
+	JR Z, QUITSI
+	CALL STRCHR		; SAVE THE CHAR
+LPCRGT:
+	CALL INDSKC		; READ ANOTHER CHARACTER
+	JR NC, LOPCRS		; IF NOT, CHECK AS TERMINATOR
+QUITSI:
+	PUSH HL		; SAVE PLACE TO STUFF ZERO
+	CP 34		; STOPPED ON QUOTE?
+	JR Z, MORSPC		; DON'T SKIP SPACES THEN
+; BUT DO SKIP FOLLOWING COMMA OR
+; CRLF THOUGH
+	CP " "		; STOPPED ON SPACE?
+	JR NZ, NOSKCR		; NO, DON'T SKIP SPACES
+; OR ANY FOLLOWING COMMAS OR CRLFS EITHER
+MORSPC:
+	CALL INDSKC		; READ SPACES
+	JR C, NOSKCR		; EOF, ALL DONE.
+	CP " "
+	JR Z, MORSPC
+	CP 44		; COMMA?
+	JP Z, NOSKCR
+; OK, SKIP IT
+	CP 13		; CARRIAGE RETURN?
+	JR NZ, BAKUPT		; BACK UP PAST THIS CHARACTER
+ICASLF:
+	CALL INDSKC		; READ ANOTHER
+	JR C, NOSKCR		; EOF, ALL DONE.
+	CP 10		; LINE FEED?
+	JR Z, NOSKCR		; OK, SKIP IT TOO
+BAKUPT:
+	EXTERN BAKCHR:NEAR
+	CALL BAKCHR		; backup file PTRFIL
+NOSKCR:
+	POP HL		; GET BACK PLACE TO STORE TERMINATOR
+QUIT2B:
+	LD (HL), LOW 0		; STORE THE TERMINATOR
+	LD HL, (BUF-1)		; ITEM IS NOW STORED AT THIS POINT +1
+	LD A, E		; WAS IT A NUMERIC INPUT?
+	SUB " "		; IF SO, [E]=" "
+	JR Z, NUMIMK		; USE FIN TO SCAN IT
+	EXTERN STRLT2:NEAR
+	LD B, D		; SET [B]=44 IF SCANNING UNQUOTED STRING
+	LD D, LOW 0
+	CALL STRLT2
+	POP HL		; GET BACK [H,L]
+	RET		; DO ASSIGNMENT
+NUMIMK:
+	CALL GETYPR		; GET TYPE OF NUMERIC VARIABLE BEING READ
+	PUSH AF		;  PUSH PSW
+; SAVE IT
+	CALL CHRGTR		; READ FIRST CHARACTER
+	POP AF		;  POP PSW
+; RESTORE TYPE OF VARIABLE
+	PUSH AF		;  PUSH PSW
+; SAVE BACK
+	CALL C, FIN
+; SINGLE PRECISION INPUT
+	POP AF		;  POP PSW
+; GET BACK TYPE OF VAR
+	EXTERN FINDBL:NEAR
+	CALL NC, FINDBL
+; DOUBLE PRECISION INPUT
+	POP HL		; GET [H,L]
+	RET		; DO THE ASSIGNMENT
+STRCHR:
+	OR A		; TRYING TO STORE NULL BYTE
+	RET Z
+; RETURN, DONT STORE IT
+	LD (HL), A		; STORE THE CHARACTER
+	INC HL
+	DEC B		; 128 YET?
+	RET NZ
+; MORE SPACE IN BUFFER, RETURN
+	POP BC		; GET RID OF SUPERFLUOUS STACK ENTRY
+	JR QUIT2B		; SPECIAL QUIT
+
+;;; LOAD and RUN routines ;;;
+
+PRGFLI:
+	LD D, LOW OFFSET MD_SQI		; SEQUENTIAL INPUT MODE
+PRGFL2:
+	XOR A		; INTERNAL FILE NUMBER IS ALWAYS ZERO
+	JP PRGFIL		; SCAN FILE NAME AND DISK NUMMER
+; AND DO THE RIGHT THING USING MD.KIL
+; AS A FLAG
+LRUN:
+LRUN2:
+	LD A, LOW 1
+	JP LRUN3		; 1 INDICATES, CLOSE FILES, RUN
+LOAD:
+	XOR A		; FLAG ZERO FOR "LOAD"
+LRUN3:
+; A=1 INDICATES CLOSE FILES, RUN
+; A=0 INDICATES CLOSE FILES, NO RUN
+	PUSH AF		;  PUSH PSW
+; SAVE "RUN"/"LOAD" FLAG
+	CALL PRGFLI		; FIND THAT FILE AND SETUP FOR
+; USING INDSKC SUBROUTINE
+	DEC HL		; SEE IF NO RUN OPTION
+	CALL CHRGTR
+	JR Z, NOTRNL		; NO, JUST LOAD
+	CALL SYNCHR
+	DB 44D
+; GOTTA HAVE A COMMA
+	CALL SYNCHR
+	DB "R"
+; ONLY OPTION IS RUN
+	JP NZ, SNERR
+; AND THAT BETTER BE THE END
+	POP AF		;  POP PSW
+; GET RID OF "RUN"/"LOAD" FLAG
+;  RUN fn closes all files, loads program, and executes program
+;  RUN fn,R loads program, and executes program
+;  LOAD fn closes all files, loads program
+;  LOAD fn,R loads program, and executes program
+;  MERGE fn merges an ASCII program
+;  CHAIN fn loads/merges a program, and executes program (leaving files opened)
+; 
+	PUBLIC CHNENT
+; CSEG DATASG (public)
+	EXTERN RUNFLG:WORD
+CHNENT:
+	LD A, LOW 129		; A=LEAVE FILES OPEN, RUN
+	JR NOTRN1
+NOTRNL:
+	POP AF		;  POP PSW
+; restore [A]=1 for RUN, 0 for LOAD
+NOTRN1:
+; Variable  ",R"    CHAIN   LOAD   RUN
+	LD (RUNFLG), A		; RUNFLG=  ^O201    ^O201      0     1
+	OR 1D
+	LD (NLONLY), A		; NLONLY=  ^O201    ^O201      1     1
+; If NLONLY and 200 <> 0, don't close any files
+; If NLONLY and 001 <> 0, don't close file 0
+	CALL SCRTCH		; Clear variables, close files
+;  BELOW IS FIX (TO LABEL NOTINI) SO THAT IF ^C DURING MBASIC FOO, WONT EXIT TO SYSTEM
+	LD HL, (CURLIN)		; GET LINE NUMBER
+	INC HL
+; SEE IF IN INITIALIZATION
+	LD A, H
+	AND L
+	INC A
+	JR NZ, NOTINI		; NO
+	LD (CURLIN), HL		; SAVE DIRECT LINE NUMBER
+NOTINI:
+	CALL INDSKC		; READ THE FIRST CHARACTER
+	JP C, MAIN
+; ALL DONE IF NOTHING IN FILE
+	CP 254		; IS THIS A PROTECTED FILE?
+	JR NZ, NTPROL		; NO
+	LD (PROFLG), A		; SET PROTECTED FILE
+	JR BINLOD		; DO BINARY LOAD
+NTPROL:
+	INC A		; IS IT A BINARY FILE?
+	JP NZ, MAINGO
+; NO, SINCE PTRFIL IS NON-ZERO
+; INCHR WILL USE INDSKC INSTEAD OF POLLING
+; THE TERMINAL
+; WHEN EOF IS HIT PTRFIL WILL BE RESTORED
+; AND LSTFRE WILL BE USED AS A FLAG
+; TO INDICATE WHETHER TO RUN THE
+; LOADED PROGRAM
+; 
+;  TIME FOR A BINARY LOAD.
+;  AFTER THE LOAD, THE FILE IS LINKED TOGETHER
+;  LSTFRE IS USED AS A FLAG WHETHER TO RUN OR NOT
+; 
+BINLOD:
+	LD HL, (TXTTAB)		; GET PLACE TO START STORING INTO
+	EXTERN FSTLOD:NEAR
+	CALL FSTLOD		; USE FAST LOAD CODE IN DCPM.MAC
+	EXTERN PROLOD:NEAR
+	LD (VARTAB), HL		; SAVE END TEMP FOR DECODING
+	LD A, (PROFLG)		; IS THIS A PROTECTED FILE?
+	OR A		; SET CC'S
+	CALL NZ, PROLOD
+; TRANSLATE TO GOOD STUFF
+	CALL LINKER		; FIX THE LINKS
+	INC HL		; WHEN LINKER RETURNS, [H,L]
+	INC HL		; POINTS TO DOUBLE ZERO
+	LD (VARTAB), HL		; UPDATE [VARTAB]
+	CALL RUNC		; SETUP ARYTAB, STREND
+; CSEG DATASG (public)
+	EXTERN CHNFLG:WORD
+	EXTERN CHNRET:NEAR
+	LD A, (CHNFLG)		; CHAIN IN PROGRESS
+	OR A		; TEST
+	JP NZ, CHNRET
+; YES, GO BACK TO CHAIN CODE
+; CSEG DATASG (public)
+	EXTERN NLONLY:WORD
+	XOR A
+	LD (NLONLY), A		; allow all files to be closed
+	CALL FINPRT		; reset PTRFIL to 0 and close file 0
+; CSEG DATASG (public)
+	EXTERN RUNFLG:WORD
+	LD A, (RUNFLG)		; RUN OR NOT?
+	OR A
+	JP Z, READY
+	JP NEWSTT
+PRGFIN:
+	CALL FINPRT		; ZERO PTRFIL
+	CALL CLSFIL		; CLOSE FILE ZERO
+	JP GTMPRT		; REFETCH TEXT POINTER
+	PUBLIC OUTLOD
+OUTLOD:
+	CALL SCRTCH
+	JP OMERR
+; MERGE filespec  Statement
+;  (OKGETM is called by CHAIN MERGE ... in FIVEO)
+; 
+MERGE:
+	POP BC		; ELIMINATE NEWSTT RETURN
+	CALL PRGFLI		; READ THE NAME AND DISK
+	DEC HL		; MUST END THERE
+	CALL CHRGTR
+	JR Z, OKGETM		; READ THE FILE
+	CALL PRGFIN		; CLOSE OUT TIME
+	JP SNERR		; AND "SYNTAX ERROR"
+OKGETM:
+	XOR A		; NO RUN OPTION WITH "MERGE"
+; CSEG DATASG (public)
+	EXTERN RUNFLG:WORD
+	LD (RUNFLG), A		; SET UP THE RUN FLAG
+	INC A
+	LD (NLONLY), A		; NLONLY=1, don't close file 0
+	PUBLIC OKGET2
+OKGET2:
+	CALL INDSKC		; READ FROM [PTRFIL] FILE
+	JP C, MAIN
+; GO BACK IF EOF
+	INC A		; IS IT A BINARY FILE??
+	JP Z, DERBFM
+; BINARY IS WRONG FILE MODE
+	INC A		; OR PROTECTED BINARY FILE??
+	JP Z, DERBFM
+; ALSO GIVE BAD FILE MODE
+	DEC A		; adjust [A] for 1st INR A above
+; so we can put it back (backup input file)
+MAINGO:
+	DEC A		; [A]=character which was just read from file
+	CALL BAKCHR		; backup file PTRFIL
+	EXTERN SCDASC:NEAR
+	CALL SCDASC		; set File Code to ASCII overridding user setting)
+	JP MAIN
+
+;;; DISPATCH FOR DIRECT STATEMENT ;;;
+
+; 
+;  MAKE SURE WE'RE NOT READING A FILE IN
+; 
+
+;;; SAVE COMMAND -- ASCII OR BINARY ;;;
+
+SAVE:
+	PUSH HL		; save text pointer for rescan of filename
+	CALL FRMEVL		; skip filename
+	PUSH HL
+	CALL FRESTR		; release string temporary
+	POP HL
+	DEC HL
+	CALL CHRGTR
+	JP Z, ENDOFS
+; branch if end-of-statement
+	CALL SYNCHR
+	DB 44D
+; eat comma
+	CP "A"
+	JP Z, GOODSV
+; branch if got "A"
+	CP "P"
+	JP NZ, SNERR
+; branch if not "A" or "P"
+GOODSV:
+	PUSH HL		; save text pointer
+	PUSH AF		; save "A" or "P"
+	CALL CHRGTR		; check for end-of-statement
+	JP NZ, SNERR
+; error if not end-of-statement
+	POP AF
+	POP HL		; leave text pointer pointing at "A" or "P"
+ENDOFS:
+	EX (SP), HL		; XTHL
+; save End-Of-Statement text pointer
+; HL = text pointer to filename
+	PUSH AF		; save "A", "P" or null option
+	LD D, LOW OFFSET MD_SQO		; ELIMINATE EARLIER VERSION OF FILE
+; AND CREATE EMPTY FILE
+	CALL PRGFL2		; parse file name and open it
+	POP AF		; [A]="A", "P" or null option
+	POP HL		; restore End-Of-Statement text pointer
+	EXTERN PROSAV:NEAR
+	CP "P"		; PROTECTED SAVE?
+	JP Z, PROSAV
+; DO IT
+	CP "A"		; Ascii save?
+	JP NZ, BINSAV
+; if not, must be Binary Save
+	CALL CHRGTR		; skip "A"
+	CALL SCDASC		; set File Code to ASCII (overridding user setting)
+	JP LIST		; USE THE LIST CODE TO DO THE OUTPUT
+; CONTROL-CS ARE NOT ALLOWED
+; AND AT THE END PTRFIL IS ZEROED
+	EXTERN BINSAV:NEAR
+
+;;; DRIVER CODE FOR CLOSE ;;;
+
+
+;;; "FIELD" STATEMENT FOR SETTING UP I/O STRINGS ;;;
+
+; CSEG DATASG (public)
+	EXTERN TEMPA:WORD
+	EXTERN TEMPB:WORD
+FIELD:
+	CALL FILSCN		; GET DATA BLOCK POINTER IN [B,C]
+	EXTERN DERFNO:NEAR
+	JP Z, DERFNO
+; error if File Not Opened
+	SUB OFFSET MD_RND		; MAKE SURE ITS A RANDOM FILE
+	JP NZ, DERBFM
+; IF NOT, "BAD FILE MODE"
+	EX DE, HL		; SAVE TEXT POINTER
+	LD HL, OFFSET FD_SIZ		; POINT TO RECORD SIZE
+	ADD HL, BC
+	LD HL, (HL)		; GET IT
+	LD (TEMPA), HL		; STORE MAX ALLOWED
+	LD HL, 0		; ZERO MAX # OF CHARS
+	LD (TEMPB), HL
+	LD A, H		; MAKE [A]=0
+	EX DE, HL		; GET BACK TEXT POINTER
+	LD DE, OFFSET FD_DAT		; POINT TO 5.0 FIELD BUFFER
+LOPFLD:
+	EX DE, HL		; SAVE TEXT POINTER IN [D,E]
+	ADD HL, BC		; ADD ON DATA POINTER SO [H,L] NOW POINTS
+; AT THE START OF THE DATA
+	LD B, A		; SETUP COUNT OF CHARACTERS PAST BY
+; IN DATA AREA, SO TOTAL IS NEVER GREATER THAN 128
+	EX DE, HL		; TEXT POINTER BACK INTO [H,L]
+; [D,E]=POINTER INTO DATA AREA
+	LD A, (HL)		; MORE "AS"S TO SCAN?
+	CP 44		; COMMA STARTS THE CLAUSE
+	RET NZ
+; BACK TO NEWSTT IF NOT
+	PUSH DE		; SAVE THE POINTER INTO THE DATA BLOCK
+	PUSH BC		; SAVE [B]=NUMBER OF CHARACTERS ALLOCATED
+	CALL GTBYTC		; READ NUMBER INTO [A] FROM TEXT
+	PUSH AF		; SAVE THIS NUMBER
+	CALL SYNCHR
+	DB "A"
+; SCAN THE "AS"
+	CALL SYNCHR
+	DB "S"
+	CALL PTRGET		; GET A POINTER AT THE STRING DESCRIPTOR
+	CALL FRCSTR		; INTO [D,E]
+	POP AF		; GET THE NUMBER OF CHARACTERS
+	POP BC		; GET THE NUMBER ALREADY USED
+	EX (SP), HL		; XTHL
+; SAVE THE TEXT POINTER AND
+; [H,L]=POINTER INTO DATA BLOCK
+	LD C, A		; SAVE # OF CHARACTERS IN [C]
+	PUSH DE		; SAVE [D,E]
+	PUSH HL		; SAVE [H,L]
+	LD HL, (TEMPB)		; GET TOTAL SO FAR
+	LD B, LOW 0		; ACCUMULATE COUNT
+	ADD HL, BC		; Add in current field size
+	LD (TEMPB), HL		; SAVE TOTAL AGAIN
+	EX DE, HL		; TOTAL TO [D,E]
+	LD HL, (TEMPA)		; GET MAX ALLOWED
+	LD A, H
+	SUB D
+	RET NZ
+	LD A, L
+	SUB E		; IN RANGE?
+	JP C, DERFOV
+; NO, GIVE ERROR
+	POP HL		; RESTORE [H,L]
+	POP DE		; RESTORE [D,E]
+	EX DE, HL		; [H,L] POINT AT STRING DESCRIPTOR
+	LD (HL), C		; STORE THE LENGTH
+	INC HL
+	LD (HL), DE		; STORE THE POINTER INTO THE DATA BLOCK
+	POP HL		; GET BACK THE TEXT POINTER
+	JR LOPFLD		; CONTINUE SCANNING "AS" CLAUSES IF MORE
+
+;;; Random Non-I/O -- LSET/RSET/FIELD ;;;
+
+; LSET/RSET stringvar = stringexp
+; 
+;  If stringvar points to an I/O buffer, use the string size to
+; justify string. If stringvar is a literal, make new var with length
+; of literal. If stringvar points to string space, use it. If the
+; length of the variable is zero, return the null string. If a copy
+; must be created, and stringexp is a temporary, use this space over
+; unless length stringvar greater than stringexp.
+RSET:
+	OR 0D		; clear carry
+	JR LSETA
+LSET:
+	SCF		; Set carry if lset
+LSETA:
+	PUSH AF		; Save LSET/RSET flag
+	CALL PTRGET		; Get pointer to stringvar
+	CALL FRCSTR		; Must be a string variable
+	PUSH DE		; Save pointer to descriptor
+	CALL FRMEQL		; EAT "=" AND EVALUATE STRINGEXP
+	POP BC		;  [B,C] = ptr to descr.
+	EX (SP), HL		; XTHL
+; Text ptr on bottom of stack
+	PUSH HL		; LSET/RSET flag next
+	PUSH BC		; Put descr. ptr back on
+	CALL FRESTR		; Error if not string, free temp.
+	LD B, (HL)		; Get length of stringexp
+	EX (SP), HL		; XTHL
+;  [H,L] = descr. of var,save othr
+	LD A, (HL)		; Get length of stringvar
+	LD C, A		; Save in [C]
+	PUSH BC		; Save lengths of both
+	PUSH HL		; Save descriptor pointer
+	PUSH AF		; PSW zero if was temp.
+	INC HL
+	LD DE, (HL)		; get point to stringvar text
+	OR A		; stringvar null?
+	JR Z, RETCUR		; Yes, don't change
+	LD HL, (TXTTAB)
+	LD A, H
+	SUB D
+	RET NZ
+	LD A, L
+	SUB E		; Stringvar in disk buffer?
+	JR NC, OLDSTR		; Yes, use it
+	LD HL, (VARTAB)
+	LD A, H
+	SUB D
+	RET NZ
+	LD A, L
+	SUB E		; stringvar in program(literal)?
+	JR C, OLDSTR		; No, in string space so use it
+; Need to make new string for result since stringvar points to a literal.
+; If stringexp was a temporary, it has been freed. If the length of
+; stringexp is greater than or equal to the length of stringvar, GETSPA
+; can be called and no garbage collection can occur so temp. can be reused.
+; If stringvar is greater, must get a temp. to point to stringexp if it
+; was a temp. , then call GETSPA which in this case can garbage collect.
+	LD E, C
+	LD D, LOW 0		; # BYTES TO ALLOCATE FOR RESULT
+; CSEG DATASG (public)
+	EXTERN STREND:WORD
+	LD HL, (STREND)
+	ADD HL, DE
+	EX DE, HL
+	LD HL, (FRETOP)
+	LD A, H
+	SUB D
+	RET NZ
+	LD A, L
+	SUB E		; will GETSPA garbage collect?
+	JR C, MAKDSC		; Yes, better have stringexp temp.
+	POP AF		; get rid of temp indicator
+MADESC:
+	LD A, C		; Get length of stringvar
+	CALL GETSPA		; Get space for result
+	POP HL		; Get stringvar descr.
+	POP BC		; Get lengths off stack
+	EX (SP), HL		; XTHL
+; Get what we wanted, stringexp descr.
+	PUSH DE
+	PUSH BC
+	CALL FRESTR		; Free temp if any
+	POP BC
+	POP DE
+	EX (SP), HL		; XTHL
+	PUSH BC		; Restore stack to previous state
+	PUSH HL
+	INC HL
+	PUSH AF
+	LD (HL), DE		; set pointer to stringvar copy
+OLDSTR:
+	POP AF
+	POP HL		; Get stringvar descr.
+	INC HL
+	LD DE, (HL)		; Get pointer to text area
+	POP BC		; Get lengths off stack
+	POP HL		; Get pointer to stringexp descr.
+	INC HL		; point to address part
+	LD HL, (HL)		; Get ptr to stringexp text
+	LD A, C		; Get length of field(stringvar)
+	CP B
+	JR NC, FILDOK		; Jump if field large enough for result
+	LD B, A		; Save # of bytes to copy
+FILDOK:
+	SUB B
+	LD C, A		; [C] = # blanks to fill
+	POP AF		; Get LSET/RSET flag
+	CALL NC, BLKFIL
+; Fill leading if RSET
+	INC B		; In case zero
+COPLOP:
+	DEC B		; Decr. # to copy
+	JR Z, LRSTDN		; Done when all copied
+	LD A, (HL)		; Get byte from stringexp
+	LD IXH, D
+	LD IXL, E
+	LD (IX), A		; Copy to stringvar
+	INC HL
+	INC DE
+	JR COPLOP
+RETCUR:
+	POP BC
+	POP BC
+	POP BC
+	POP BC
+	POP BC		; Get garb off stack
+LRSTDN:
+	CALL C, BLKFIL
+; Fill trailing if LSET
+	POP HL		; Restore text pointer
+	RET
+BLKFIL:
+	LD A, LOW " "		; Fill with spaces
+	INC C		; In case zero
+BLKFL1:
+	DEC C		; Decr. # to fill
+	RET Z
+; Return when done
+	LD IXH, D
+	LD IXL, E
+	LD (IX), A		; Store space
+	INC DE
+	JR BLKFL1
+;  If stringexp was a temporary, create a new temporary to point to
+;  stringexp since old one was freed. This must be done since GETSPA
+;  will be called and garbage collection might occur. If stringexp is
+;  not a temporary, return.
+MAKDSC:
+	POP AF		; Get temp flag
+	POP HL
+	POP BC
+	EX (SP), HL		; XTHL
+; Dig down to stringexp descr.
+	EX DE, HL		; FRETMS wants [D,E]
+	JR NZ, MAKDS1		; Not a temp, don't reallocate
+	PUSH BC
+	LD A, B
+	CALL STRINI		; Make a temp point to stringexp
+	CALL PUTNEW		; Get a temp to point to it
+	POP BC
+MAKDS1:
+	EX (SP), HL		; XTHL
+	PUSH BC
+	PUSH HL		; Restore stack to previous state
+	JP MADESC
+
+;;; Program I/O -- Fixed Length INPUT ;;;
+
+;  Format:
+;                stringvar = INPUT$(#bytes[,[#] file#])
+; If no file # is given, characters will be read from the user's
+;  terminal. No echoing will be done and no editing will be allowed
+;  (i.e. rubout,@,_,^U are just input as characters).
+	PUBLIC FIXINP
+FIXINP:
+	CALL CHRGTR
+	CALL SYNCHR
+	DB "$"
+; STRING FUNCTION
+	CALL SYNCHR
+	DB "("
+	PUSH HL		; Preserve PTRFIL across INPUT$ so
+	LD HL, (PTRFIL)		; cases like PRINT #2,INPUT$(3,#1)
+	LD DE, 0		; will work properly.
+	LD (PTRFIL), DE		; (Clear PTRFIL in case no file number
+	EX (SP), HL		; XTHL
+; is specified.)
+	CALL GETBYT		; Get # of bytes to read
+	PUSH DE		; Save # of bytes to read
+	LD A, (HL)
+	CP 44		; Read from disk file?
+	JR NZ, REDTTY		; No, from user's terminal
+	CALL CHRGTR
+	CALL FILSCN		; Set up file #
+	EXTERN DERFNO:NEAR
+	JP Z, DERFNO
+; error if File Not Open
+	CP MD_SQO		; SEQUENTIAL OUTPUT FILE?
+	JP Z, DERBFM
+; THEN BAD FILE MODE
+	CALL FILSET		; SET UP PTRFIL
+	XOR A		; SET ZERO FOR FLAG
+REDTTY:
+	PUSH AF		;  PUSH PSW
+; NON ZERO SET IF TERMINAL I/O
+	CALL SYNCHR
+	DB ")"
+; Must have paren
+	POP AF		;  POP PSW
+; Get flag off stack
+	EX (SP), HL		; XTHL
+; Save text ptr, [L]=# to read
+	PUSH AF		;  PUSH PSW
+; Save flag
+	LD A, L
+	OR A		; Read no characters?
+	JP Z, FCERR
+; Yes, error
+	PUSH HL		; Save #
+	CALL STRINI		; Get space for string
+	EX DE, HL
+	POP BC		; [C] = # to read
+FIXLOP:
+	POP AF		;  POP PSW
+	PUSH AF		;  PUSH PSW
+; NON-ZERO set if should read from TTY
+	JR Z, DSKCHR		; Read from disk file
+	CALL INCHRI		; Read a char from terminal
+CHARCW:
+; Note : will check flag on interrupt ^c
+PUTCHR:
+	LD (HL), A		; Put char into string
+	INC HL
+	DEC C		; Read enough yet?
+	JR NZ, FIXLOP		; No, read more
+; CSEG DATASG (public)
+	EXTERN SAVKEY:WORD
+; Second half of two-byte key
+	XOR A
+	LD (SAVKEY), A		; Clear saved second byte
+	POP AF		;  POP PSW
+; Get flag off stack
+	POP BC		; B:=text pointer.
+	POP HL		; Restore PTRFIL.
+	LD (PTRFIL), HL
+	PUSH BC		; Restack the text pointer.
+	JP PUTNEW		; Return string as result
+DSKCHR:
+	CALL INDSKC		; Get char from file
+	JP C, DERRPE
+; If carry, read past EOF
+	JR PUTCHR		; Put char in string

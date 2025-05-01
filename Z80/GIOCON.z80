@@ -1,0 +1,127 @@
+;  [ This translation created 10-Feb-83 by Version 4.3 ]
+	.radix 8
+;  To be safe
+; CSEG CODESG (public)
+; Assuming segment CS:CSEG
+	include OEM.H
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; GIOCON - Machine Independent CONS: Device Support ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; 
+; 
+; --------- --- ---- -- ---------
+; COPYRIGHT (C) 1982 BY MICROSOFT
+; --------- --- ---- -- ---------
+; 
+;         
+	include GIO86U
+	CPM86=0
+; CPM86
+; This module becomes NULL if CONSSW is 0
+; 
+	include MSDOSU
+; MSDOS Constant Definitions
+	PUBLIC CONDSP
+	PUBLIC _RET
+	PUBLIC CONSOT
+	EXTERN DERBFM:NEAR
+	EXTERN PDCBAX:NEAR
+	EXTERN DEVBOT:NEAR
+	EXTERN DEVBIN:NEAR
+
+;;; CONS (Raw-CRT output Dispatch Table and Routines) ;;;
+
+; Console Dispatch Table
+; 
+CONDSP:
+	dw (DERBFM)
+; test EOF for file opened to this device
+	dw (DERBFM)
+; LOC
+	dw (DERBFM)
+; LOF
+	dw (_RET)
+; perform special CLOSE functions for this device
+	dw (DERBFM)
+; set device width
+	dw (DERBFM)
+; GET/PUT random record from/to this device
+	dw (CONOPN)
+; perform special OPEN functions for this device
+	dw (DERBFM)
+; input 1 byte from file opened on this device
+	dw (CONSOT)
+; output 1 byte to file opened on this device
+	dw (CONGPS)
+; POS
+	dw (CONGWD)
+; get device width
+	dw (_RET)
+; set device comma width
+	dw (_RET)
+; get device comma width
+	dw (DEVBIN)
+; block input from file opened on this device
+	dw (DEVBOT)
+; block output to file opened on this device
+; CONOPN - perform any device dependent open functions.
+;  Entry - [AL]=  device id
+;                 0 if default device,
+;                 1..n for Disk A:, B:, ...
+;                 -1..-n for non-disk devices
+;          [BX] = file number (0..n)
+;          [CX] = random record size if [FILMOD] = random
+;                 (if [CX] = 0, use default record size)
+;          [DI] = device offset (2=SCND, 4=SCRN, etc.)
+;          [FILMOD] = file mode
+;                     MD.SQI = 1 ;sequential input
+;                     MD.SQO = 2 ;sequential output
+;                     MD.RND = 3 ;random
+;                     MD.APP = 4 ;append
+;          [FILNAM] = filename
+;          [FILEXT] = 1..3 byte filename extension
+;  Exit  - [SI] points to new FDB
+;          FDB is linked into FDB chain with all standard
+;          fields initialized.
+;          All other registers are preserved.
+; 
+	EXTERN INIFDB:NEAR
+CONOPN:
+	LD AH, LOW OFFSET MD_SQO		; allow open for output only
+	LD DE, 255		; initial file column position=0
+; initial file width=255
+	JP INIFDB
+; CONGPS - return current file position.
+;  Entry - SI points to File-Data-Block.
+;  Exit  - [AH] = current file column. (0-relative)
+;          All other registers preserved
+; 
+CONGPS:
+	LD AH, LOW 0
+_RET:
+	RET
+; CONGWD - get device width
+;  Exit  - [AH] = device width as set by xxxSWD
+;          All other registers preserved
+; 
+CONGWD:
+	LD AH, LOW 255		; infinite width
+	RET
+; CONSOT - Write one byte to the console.
+; 
+; ENTRY  - AL = Character to output
+; EXIT   - All registers except SI and DI are preserved.
+; 
+CONSOT:
+	PUSH AF
+	PUSH HL
+	PUSH BC
+	PUSH DE
+	CP 255
+	JP Z, CONSOX		; Don't allow outputing FFH
+	LD E, A
+	CALLOS C_DCIO ; Direct Console I/O
+CONSOX:
+	JP PDCBAX		; Pop DX,CX,BX,AX and RET

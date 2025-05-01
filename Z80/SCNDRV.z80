@@ -1,0 +1,311 @@
+;  [ This translation created 10-Feb-83 by Version 4.3 ]
+	.radix 8
+;  To be safe
+; CSEG CODESG (public)
+; Assuming segment CS:CSEG
+	include OEM.H
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; SCNDRV  This is the OS independent Screen Driver for GW BASIC ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+;;; DATA DEFINITIONS - Miscellaneous ;;;
+
+; 
+; 	--------- --- ---- -- ---------
+; 	COPYRIGHT (C) 1982 BY MICROSOFT
+; 	--------- --- ---- -- ---------
+; 
+; 	PROGRAMMER: MARC WILSON
+; 
+; 	
+	include GIO86U
+	.radix 8
+; OEM IFNDEFs
+	MELCO=0
+	CANON=0
+; GENERIC IFNDEF'S:
+	TERMSW=0
+	HLPEDT=0
+	NMPAGE=1
+; Number of pages
+	NEWCHP=1
+; New change page routine
+	IBMEOL=IBMLIK
+; Clear to EOL for COMPATIBILITY
+	IBMCSR=IBMLIK
+; IBM COMPATIBILITY for cursor
+; Definition of scroll types
+;  Choice of scroll type is by switch SCROLT.
+;  Switches defined here are used to implement a specific SCROLT type.
+;  If other scroll types are needed then additional SCROLT types should be
+;    defined here.
+	INVLIN=SCROLT
+; Invisible (function key) Line
+	FKFSRL=(SCROLT-1) AND 1
+; Clear fkeys/full scroll/rewrite fkeys
+; OTHER GENERIC SWITCHES(OEM SPECIFIC)
+	TXTWDO=0
+; list of OEM's which have window setting capability
+
+;;; DATA DEFINITIONS - Internal routines(with usage description) ;;;
+
+; Entry points
+	PUBLIC SCNSWI
+;  Set CRT physical line width
+; on entry:  AL=width, CL=height
+	PUBLIC SCNCLR
+;  Clear CRT, Refresh Function Key Display,
+;  Home Graphics and Text Cursors
+; on entry:  none
+	PUBLIC SCNLOC
+;  Locate cursor on physical screen(1,1 = HOME)
+; on entry:  AH=column(x), AL=line(y)
+	PUBLIC SCNOUT
+;  Character output at current position
+; on entry:  AX=character
+	PUBLIC SCNRDL
+;  Read a physical line at current position
+; on entry:  DI=address of where to put string, CX=max count
+; on exit:   CX=CX-number of characters read
+;            DI=DI+number of characters read
+	PUBLIC SCNPOS
+;  Return current cursor location
+; on exit:   DL=cursor line, DH=cursor column
+	PUBLIC SCNRDT
+;  Read terminator for physical line
+; on entry:  DL=line number
+; on exit:   AH= terminator column, AL=terminator value
+;            Flags indicate terminator value:
+;            CF=EOL, ZF=Linefeed
+	PUBLIC SCNGWI
+;  Read logical width of lines
+; on exit:   AH=logical width of lines
+	PUBLIC SCNMRK
+;  Mark position as current FSTPOS, LSTPOS
+; on entry:  ZF set indicates use WDOLFT as column
+;            ZF clear indicates use CSRX as column
+	PUBLIC SCNIPL
+;  Initialize - called during IPL
+	PUBLIC SCNBRK
+;  Initialize - called when BREAK received by POLKEY
+
+;;; DATA DEFINITIONS - External routines and data ;;;
+
+; EXTERNAL ROUTINES
+	EXTERN SCROLL:NEAR
+;  OEM supplied SCROLL routine
+	EXTERN SCROUT:NEAR
+;  OEM supplied character output
+	EXTERN SCRINP:NEAR
+;  OEM supplied screen input(read character)
+	EXTERN CLREOL:NEAR
+;  OEM supplied screen clear to end of line
+; THE FOLLOWING IS DATA UNIQUE TO THE SCNDRV MODULE
+;        ALL DATA IS ONE BYTE LONG UNLESS STATED OTHERWISE
+; CSEG DATASG (public)
+; Assuming segment DS:DSEG
+	EXTERN LINCNT:WORD
+;  Number of lines
+	EXTERN CRTWID:WORD
+;  Characters per line
+	EXTERN WDOTOP:WORD
+;  Top line in window(1-[LINCNT])
+	EXTERN WDOBOT:WORD
+;  Bottom line in window([WDOTOP]-[LINCNT])
+	EXTERN WDOLFT:WORD
+;  Leftmost column in window(1-[CRTWID])
+	EXTERN WDORGT:WORD
+;  Rightmost column plus one([WDOLFT]-[LINCNT])
+	EXTERN LINLEN:WORD
+;  Line max width(1 to CRTWID)
+	EXTERN LINTTB:WORD
+;  Line terminator table((# lines * 2) bytes long)
+;  Two items per entry:
+;    Terminator, last column
+	EXTERN TRMCUR:WORD
+;  Address of current terminator entry(2 bytes)
+	EXTERN FSTLIN:WORD
+;  Line number saved by SCNSTM call
+	EXTERN FSTCOL:WORD
+;  Column saved as above and decreases to WDOLFT
+	EXTERN LSTLIN:WORD
+;  Line number saved by SCNSTM and grows as the
+;    logical line grows.
+	EXTERN LSTCOL:WORD
+;  Column saved as above which grows as the logical
+;    line grows(always reflects last col on LSTLIN).
+	EXTERN F_CRET:WORD
+;  Zero indicates last character output was CR
+	EXTERN CSRY:WORD
+;  Current line(1-[LINCNT])
+	EXTERN CSRX:WORD
+;  Current column(1-[CRTWID])
+	EXTERN KEYSW:WORD
+;  ^O377=Function Keys displayed on bottom line
+; THE FOLLOWING DATA IS ACCESSED BY SCNDRV BUT SET ELSEWHERE
+	EXTERN F_EDIT:WORD
+;  Set to non-zero by INLIN when editing
+	EXTERN F_INST:WORD
+;  Set to non-zero by INLIN for insert mode
+
+;;; DATA DEFINITIONS - Literals ;;;
+
+; CHARACTER DEFINITIONS
+; 
+	CHREDT=1
+;  EDiT
+	CHRBKW=2
+;  BacK Word
+	CHRCAN=3
+;  CANcel
+	CHRHCN=4
+;  Hard CaNcel
+	CHRCLE=5
+;  CLear to End of line
+	CHRFDW=6
+;  ForwarD Word
+	CHRBEL=7
+;  BELl
+	CHRBAK=8D
+;  BAcKspace
+	CHRTAB=9D
+;  TAB
+	CHRLNF=10D
+;  LiNeFeed
+	CHRHOM=11D
+;  HOMe
+	CHRERA=12D
+;  ERAse
+	CHRRET=13D
+;  RETurn
+	CHRAPP=14D
+;  APPend
+	CHRINS=18D
+;  INSert
+	CHRFKD=20D
+;  Function Key Display key
+	CHRLDL=21D
+;  Line DeLete
+	CHRADV=28D
+;  cursor RiGhT
+	CHRREG=29D
+;  cursor LeFT
+	CHRUP=30D
+;  cursor UP
+	CHRDWN=31D
+;  cursor DoWN
+	CHRDEL=127D
+;  DELete
+; TERMINATOR TABLE LITERALS
+	PUBLIC TRMLNF
+	TRMLNF=10D
+;  LINEFEED terminator
+	PUBLIC TRMEOL
+	TRMEOL=177O
+;  EOL terminator
+	PUBLIC TRMWRP
+	TRMWRP=0
+;  WRAP terminator
+	PUBLIC TRMNWP
+	TRMNWP=1
+;  NULL WRAP terminator
+	PUBLIC TRMNUL
+	TRMNUL=200O
+;  Sign bit indicates initialize line
+; DEFAULT SCREEN SIZE
+	PUBLIC SCNSIZ
+	SCNSIZ=20D+(40D*400O)
+;  Height = 20, Width = 40
+
+;;; SCNIPL ;;;
+
+
+;;; SCNSWI AND SCNWDO   The parameter setting routines ;;;
+
+; SUBROUTINE SCNIPL():           ; Initialize
+; **
+SCNIPL:
+; CSEG DATASG (public)
+	EXTERN ESCFLG:WORD
+	LD (ESCFLG), LOW 0
+	RET
+; ** END SUBROUTINE SCNIPL
+; BREAK - reset flags etc. when ^C typed.
+; 
+SCNBRK:
+	LD (FSTLIN), LOW 0
+	LD (LSTLIN), LOW 255		;  Set FSTPOS, LSTPOS to impossible values
+	LD (F_CRET), LOW 255		;  Clear "last char was CR" flag
+	RET
+; SUBROUTINE SCNSWI(WIDTH,HEIGHT):       ; Set screen width(logical/physical) and height
+; **                     on entry:   AL=width, CL=height
+; **
+SCNSWI:
+	LD (CRTWID), A		;  Save physical width
+	LD (LINLEN), A		;  Set logical line length
+	LD (LINCNT), C		;  Save physical height
+	LD (WDOTOP), LOW 1		;  Init window top
+	PUSH BC
+	DEC C		;  Reserve status line
+	LD (WDOBOT), C		;  Set window bottom
+	POP BC
+	LD (WDOLFT), LOW 1		;  Set window left
+	LD (WDORGT), A		;  Set window right
+	RET
+; ** *** END
+; ** END SUBROUTINE SCNSWI
+; SUBROUTINE SCNWDO(POSN,COUNT): ; Set text window
+; **
+; **                             on entry:   AH=column posn, AL=line posn
+; **                                         CH=width, CL=height
+; **                             on exit:    AX,CX=values actually set
+; **                                         CF indicates posn outside screen
+; **
+; **                             NOTE: This routine truncates width and height.
+; **
+; ** IF POSN IS CONTAINED WITHIN PHYSICAL SCREEN BEGIN
+
+;;; CURSOR READ/WRITE ;;;
+
+; SUBROUTINE SCNLOC(X,Y):        ; Locate cursor on physical screen
+; **                         on entry:   AH=column, AL=line(1,1 is home)
+; **
+SCNLOC:
+	LD (CSRX), AH
+	LD (CSRY), A
+	RET
+; ** END SUBROUTINE SCNLOC
+; SUBROUTINE SCNCLR(X,Y):        ; Clear Screen, Home Text & Graphics Cursor,
+;                                ; Refresh Function Key Display
+; **                         on entry:
+; 
+	EXTERN KEYDSP:NEAR
+	EXTERN GRPINI:NEAR
+SCNCLR:
+	CALL TTBINI		; Clear the terminator table
+	CALL GRPINI		; Home the graphics cursor
+	CALL WHOME		; DX=cursor home
+	PUSH AX
+	POP DE
+	
+	CALL SCNLOC		; set cursor position
+	JP KEYDSP		; Conditionally display softkeys and return
+; ** END SUBROUTINE SCNCLR
+; SUBROUTINE SCNPOS              ; Read current cursor location
+SCNPOS:
+	LD D, (CSRX)
+	LD E, (CSRY)
+	PUSH AF
+Exception: Don't know how to generate CMP: {'type': 'instruction', 'op': 'CMP', 'operands': ('DH', ('BYTE', 'PTR', 'LINLEN')), 'comment': None, 'id': 274}
+Traceback (most recent call last):
+  File "/Users/mac/Library/Python/3.9/lib/python/site-packages/z80conv-0.0.1-py3.9.egg/z80conv/conv.py", line 20, in main
+    for line in writer.lines():
+  File "/Users/mac/Library/Python/3.9/lib/python/site-packages/z80conv-0.0.1-py3.9.egg/z80conv/writer.py", line 27, in lines
+    line = getattr(self, generator)(token)
+  File "/Users/mac/Library/Python/3.9/lib/python/site-packages/z80conv-0.0.1-py3.9.egg/z80conv/writer.py", line 801, in _gen_instruction
+    instr = getattr(self, '_gen_instruction_' + op.lower())(token)
+  File "/Users/mac/Library/Python/3.9/lib/python/site-packages/z80conv-0.0.1-py3.9.egg/z80conv/writer.py", line 264, in _gen_instruction_cmp
+    raise SyntaxError("Don't know how to generate CMP: %s" % token)
+SyntaxError: Don't know how to generate CMP: {'type': 'instruction', 'op': 'CMP', 'operands': ('DH', ('BYTE', 'PTR', 'LINLEN')), 'comment': None, 'id': 274}
